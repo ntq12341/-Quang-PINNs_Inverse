@@ -12,7 +12,12 @@ from data_generate import (
     generate_inverse_data,
     top_boundary_example_52_hat,
 )
-from network import PINN, l_curve_method, train_lbfgs
+from network import (
+    PINN,
+    discrepancy_principle_method,
+    l_curve_method,
+    train_lbfgs,
+)
 from perform_evaluate import export_error_tables
 from visual import plot_surface_comparison, plot_top_boundary_comparison
 
@@ -37,6 +42,9 @@ def run_example_52(
     forward_iter=1000,
     lcurve_iter=400,
     inverse_iter=1000,
+    alpha_method="discrepancy",
+    discrepancy_tau=1.0,
+    discrepancy_terms=("pde", "left", "right", "bottom_neumann", "cauchy"),
 ):
     """Run Example 5.2 (hat top boundary) from Hao-Shishlenin-Cong (2025)."""
     if device is None:
@@ -86,7 +94,6 @@ def run_example_52(
         N_reg=500,
     )
 
-    print("Step 3/3: solve inverse problem with L-curve alpha selection...")
     inverse_weights = {
         "pde": 1.0,
         "left": 1.0,
@@ -98,15 +105,39 @@ def run_example_52(
 
     alphas = np.logspace(-5, -1, 10)
     model_for_alpha = PINN().to(device)
-    optimal_alpha, l_curve_results = l_curve_method(
-        model_for_alpha,
-        data_inverse,
-        alphas,
-        max_iter=lcurve_iter,
-        device=device,
-        loss_weights=inverse_weights,
-    )
-    print(f"Selected alpha (L-curve): {optimal_alpha:.6e}")
+
+    if alpha_method.lower() == "lcurve":
+        print("Step 3/3: choose alpha by L-curve...")
+        optimal_alpha, alpha_scan = l_curve_method(
+            model_for_alpha,
+            data_inverse,
+            alphas,
+            max_iter=lcurve_iter,
+            device=device,
+            loss_weights=inverse_weights,
+        )
+        discrepancy_target = None
+        print(f"Selected alpha (L-curve): {optimal_alpha:.6e}")
+    elif alpha_method.lower() == "discrepancy":
+        print("Step 3/3: choose alpha by discrepancy principle (functional residual)...")
+        optimal_alpha, alpha_scan, discrepancy_target = discrepancy_principle_method(
+            model_for_alpha,
+            data_inverse,
+            alphas,
+            noise_level=noise_level,
+            max_iter=lcurve_iter,
+            device=device,
+            loss_weights=inverse_weights,
+            tau=discrepancy_tau,
+            discrepancy_terms=discrepancy_terms,
+        )
+        used_terms = alpha_scan[0]["used_terms"] if alpha_scan else tuple(discrepancy_terms)
+        print(
+            f"Selected alpha (discrepancy, target={discrepancy_target:.3e}, "
+            f"terms={used_terms}): {optimal_alpha:.6e}"
+        )
+    else:
+        raise ValueError("alpha_method must be 'lcurve' or 'discrepancy'.")
 
     model_final = PINN().to(device)
     losses = train_lbfgs(
@@ -138,9 +169,11 @@ def run_example_52(
     return {
         "noise_level": noise_level,
         "alpha": optimal_alpha,
+        "alpha_method": alpha_method,
+        "discrepancy_target": discrepancy_target,
         "l2_error": l2_error,
         "losses": losses,
-        "l_curve": l_curve_results,
+        "alpha_scan": alpha_scan,
         "model": model_final,
         "x_top": x_eval,
         "u_top_exact": u_top_exact,
@@ -161,6 +194,9 @@ def run_example_52_suite(
     inverse_iter=1000,
     figs_dir=None,
     tables_dir=None,
+    alpha_method="discrepancy",
+    discrepancy_tau=1.0,
+    discrepancy_terms=("pde", "left", "right", "bottom_neumann", "cauchy"),
 ):
     """Run Example 5.2 for multiple noise levels, save figures, and export tables."""
     if device is None:
@@ -186,6 +222,9 @@ def run_example_52_suite(
             forward_iter=forward_iter,
             lcurve_iter=lcurve_iter,
             inverse_iter=inverse_iter,
+            alpha_method=alpha_method,
+            discrepancy_tau=discrepancy_tau,
+            discrepancy_terms=discrepancy_terms,
         )
         all_results[noise] = result
 
@@ -231,7 +270,10 @@ def run_example_52_suite(
     print("\nSummary (L2 at x2=1):")
     for noise in noise_levels:
         r = all_results[noise]
-        print(f"noise={noise * 100:>4.1f}% | alpha={r['alpha']:.3e} | L2={r['l2_error']:.6e}")
+        print(
+            f"noise={noise * 100:>4.1f}% | alpha={r['alpha']:.3e} "
+            f"| method={r['alpha_method']} | L2={r['l2_error']:.6e}"
+        )
 
     print(f"\nSaved figures to: {figs_path}")
     print("Saved CSV files:")
@@ -248,4 +290,7 @@ if __name__ == "__main__":
     run_example_52_suite(
         noise_levels=(0.01, 0.03, 0.05, 0.07),
         surface_noise=0.03,
+        alpha_method="discrepancy",
+        discrepancy_tau=1.1,
+        discrepancy_terms=("pde", "left", "right", "bottom_neumann", "cauchy"),
     )

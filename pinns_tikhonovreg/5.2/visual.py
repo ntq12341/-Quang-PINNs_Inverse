@@ -12,38 +12,19 @@ def plot_surface_comparison(
     noise_label="3%",
     save_path=None,
 ):
-    """Plot 3D exact / ANN / error surfaces in one figure."""
+    """Plot ANN surface only (single 3D panel)."""
     X, Y = np.meshgrid(x, y)
-    err_grid = u_ann_grid - u_exact_grid
 
-    fig = plt.figure(figsize=(16, 5))
+    fig = plt.figure(figsize=(6.5, 5))
+    ax = fig.add_subplot(1, 1, 1, projection="3d")
+    s = ax.plot_surface(X, Y, u_ann_grid, cmap="viridis", linewidth=0, antialiased=True)
 
-    ax1 = fig.add_subplot(1, 3, 1, projection="3d")
-    s1 = ax1.plot_surface(X, Y, u_exact_grid, cmap="viridis", linewidth=0, antialiased=True)
-    ax1.set_title("Exact Solution")
-    ax1.set_xlabel(r"$x_1$")
-    ax1.set_ylabel(r"$x_2$")
-    ax1.set_zlabel("u")
-    fig.colorbar(s1, ax=ax1, shrink=0.6, pad=0.08)
-
-    ax2 = fig.add_subplot(1, 3, 2, projection="3d")
-    s2 = ax2.plot_surface(X, Y, u_ann_grid, cmap="viridis", linewidth=0, antialiased=True)
-    ax2.set_title(f"ANN Solution, noise {noise_label}")
-    ax2.set_xlabel(r"$x_1$")
-    ax2.set_ylabel(r"$x_2$")
-    ax2.set_zlabel("u")
-    fig.colorbar(s2, ax=ax2, shrink=0.6, pad=0.08)
-
-    ax3 = fig.add_subplot(1, 3, 3, projection="3d")
-    s3 = ax3.plot_surface(X, Y, err_grid, cmap="viridis", linewidth=0, antialiased=True)
-    ax3.set_title(f"Error, noise {noise_label}")
-    ax3.set_xlabel(r"$x_1$")
-    ax3.set_ylabel(r"$x_2$")
-    ax3.set_zlabel("Error")
-    fig.colorbar(s3, ax=ax3, shrink=0.6, pad=0.08)
-
-    for ax in (ax1, ax2, ax3):
-        ax.view_init(elev=35, azim=45)
+    ax.set_title(f"ANN Solution, noise {noise_label}")
+    ax.set_xlabel(r"$x_1$")
+    ax.set_ylabel(r"$x_2$")
+    ax.set_zlabel("u")
+    ax.view_init(elev=35, azim=45)
+    fig.colorbar(s, ax=ax, shrink=0.7, pad=0.08)
 
     fig.tight_layout()
     if save_path is not None:

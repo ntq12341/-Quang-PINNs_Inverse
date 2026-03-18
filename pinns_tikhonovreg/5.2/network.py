@@ -139,7 +139,6 @@ def train_lbfgs(
     model.to(device)
     model.train()
 
-    # PyTorch LBFGS performs several line-search evaluations per step.
     inner_steps = 20
     n_steps = max(1, int(np.ceil(max_iter / inner_steps)))
 
@@ -231,3 +230,72 @@ def l_curve_method(
 
     optimal_idx = int(np.argmax(np.abs(curvature)))
     return results[optimal_idx]["alpha"], results
+
+
+def discrepancy_principle_method(
+    model,
+    data,
+    alphas,
+    noise_level,
+    max_iter=200,
+    device="cpu",
+    loss_weights=None,
+    tau=1.0,
+    discrepancy_terms=("pde", "left", "right", "bottom_neumann", "cauchy"),
+):
+    """
+    Choose alpha by discrepancy principle on the data-fidelity functional.
+
+    We define (discrete) fidelity residual as:
+        R(alpha)^2 = J_o + J_d + J_n
+    where terms are selected by `discrepancy_terms`.
+
+    Then choose alpha that minimizes |R(alpha) - tau*delta|.
+    """
+    results = []
+    target_rms = max(float(tau) * float(noise_level), 1e-12)
+
+    for alpha in alphas:
+        model_copy = copy.deepcopy(model).to(device)
+        train_lbfgs(
+            model_copy,
+            data,
+            alpha=alpha,
+            max_iter=max_iter,
+            device=device,
+            print_every=0,
+            loss_weights=loss_weights,
+        )
+
+        _, components = compute_loss(
+            model_copy, data, alpha=alpha, device=device, loss_weights=loss_weights
+        )
+
+        fidelity_sq = 0.0
+        used_terms = []
+        for key in discrepancy_terms:
+            if key in components:
+                fidelity_sq += float(components[key])
+                used_terms.append(key)
+
+        residual_rms = np.sqrt(max(fidelity_sq, 1e-16))
+        reg_norm = np.sqrt(max(components.get("regularization", 0.0), 1e-16))
+        gap = abs(residual_rms - target_rms)
+
+        results.append(
+            {
+                "alpha": float(alpha),
+                "residual": float(residual_rms),
+                "regularization": float(reg_norm),
+                "discrepancy_gap": float(gap),
+                "used_terms": tuple(used_terms),
+            }
+        )
+
+        print(
+            f"alpha={alpha:.3e} | fidelity_res={residual_rms:.6e} | "
+            f"target={target_rms:.6e} | gap={gap:.6e}"
+        )
+
+    optimal_idx = int(np.argmin([r["discrepancy_gap"] for r in results]))
+    return results[optimal_idx]["alpha"], results, target_rms
