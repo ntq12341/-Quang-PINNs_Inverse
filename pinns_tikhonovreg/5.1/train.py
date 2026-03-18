@@ -124,15 +124,16 @@ def run_example_51_suite(
     forward_iter=800,
     lcurve_iter=200,
     inverse_iter=1000,
-    figs_dir="results/figs",
-    tables_dir="results/tables",
+    figs_dir=None,
+    tables_dir=None,
 ):
     """Run multiple noise levels, save figures, and export error tables."""
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    figs_path = Path(figs_dir)
-    tables_path = Path(tables_dir)
+    base_dir = Path(__file__).resolve().parent
+    figs_path = base_dir / "results" / "figs" if figs_dir is None else Path(figs_dir)
+    tables_path = base_dir / "results" / "tables" if tables_dir is None else Path(tables_dir)
     figs_path.mkdir(parents=True, exist_ok=True)
     tables_path.mkdir(parents=True, exist_ok=True)
 
@@ -150,6 +151,17 @@ def run_example_51_suite(
     if surface_noise not in all_results:
         surface_noise = noise_levels[0]
 
+    for noise in noise_levels:
+        surf_n = all_results[noise]
+        plot_surface_comparison(
+            surf_n["x_field"],
+            surf_n["y_field"],
+            surf_n["u_field_exact"],
+            surf_n["u_field_pred"],
+            noise_label=f"{noise * 100:g}%",
+            save_path=figs_path / f"surface-noise-{noise * 100:g}.png",
+        )
+
     surf = all_results[surface_noise]
     plot_surface_comparison(
         surf["x_field"],
@@ -157,7 +169,6 @@ def run_example_51_suite(
         surf["u_field_exact"],
         surf["u_field_pred"],
         noise_label=f"{surface_noise * 100:g}%",
-        save_path=figs_path / f"surface-noise-{surface_noise * 100:g}.png",
     )
 
     x_top = surf["x_top"]
