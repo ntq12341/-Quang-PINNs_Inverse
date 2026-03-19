@@ -1,0 +1,1753 @@
+    Stable numerical solution to the Cauchy problem for
+     multi-dimensional nonlinear elliptic equations via
+                 artificial neural networks
+
+            Dinh Nho Hào1 , Maxim Shishlenin2 , and Cong B. Van3
+                     1
+                       Hanoi Institute of Mathematics, VAST
+                  18 Hoang Quoc Viet Road, Hanoi, Vietnam
+                              e-mail: hao@math.ac.vn
+                         2
+                           Sobolev Institute of Mathematics
+    Institute of Computational Mathematics and Mathematical Geophysics
+              Novosibirsk, Russia, Email: m.a.shishlenin@mail.ru
+                  3
+                    Department of Mathematics and Statistics,
+    University of North Carolina at Charlotte, Charlotte, NC, 28223, USA
+                            e-mail: cvan1@charlotte.edu
+
+                                     February 14, 2026
+
+
+                                           Abstract
+
+         The Cauchy problem for multi-dimensional nonlinear elliptic equations is refor-
+      mulated as a least squares problem and then stabilized by Tikhonov regularization
+      method. The last is solved in the framework of artificial neural networks, while the
+      regularization parameter is chosen by the discrepancy principle or the L-curve method.
+      Numerical simulations show that the approach is efficient for this severely ill-posed,
+      multi-dimensional and nonlinear problem.
+
+
+Keywords: Cauchy problem, multi-dimensional nonlinear elliptic equation, ill-posed prob-
+lems, regularization, L-curve method, artificial neural networks.
+
+
+
+1     Introduction
+The Cauchy problem for elliptic equations arises in many problems of Science, Technology,
+Medicine, Physics and Geophysics [1, 2, 3, 4, 5, 6]. The practical situation is that we have
+access only to a part of the boundary of the domain where the physical process is monitored,
+and we have to predict the process on the remaining (non-accessible) part of the boundary.
+This problem is unfortunately ill-posed as Jacques Hadamard shown. Following Hadamard,
+a problem is well-posed if 1) there exists a solution, 2) the solution is unique, and 3) the
+
+
+                                                1
+solution continuously depends on the data in an appropriate topology [7]. Once, at least one
+of these conditions is violated we say that the problem is ill-posed.
+In 1902 Hadamard [8] considered the Cauchy problem for the Laplace equation
+            (
+             uxx + uyy = 0, a < x < b, 0 < y < Y,
+                                                                                             (1.1)
+             u(x, 0) = φ(x), uy (x, 0) = ψ(x), a < x < b, 0 < y < Y.
+
+He shown that if φ and ψ are continuous, then there exists a solution to the problem (1.1)
+if and only if
+                                      Z b
+                          1         1
+                            φ(x) −        ψ(ξ) log | x − ξ | dξ                      (1.2)
+                          2        2π a
+is analytic in a < x < b. Thus, not for every Cauchy data φ and ψ there exists a solution
+to the Cauchy problem for the Laplace equation, and if there exists one, some compatibility
+condition between them has to be satisfied.
+Further,
+   √
+         in 1917 Hadamard [7] remarked that with the Cauchy data φn (x) = 0, ψn (x) =
+ne− n sin(nx), the solution to (1.1) has the form
+                                             √
+                                un (x, y) = e n sin(nx) sinh(ny)
+
+although |φn |, |ψn | are bounded, |un (x, y)| → ∞, as x > 0, n → ∞. Thus, the solution
+does not continuously depend on the Cauchy data. Hence, the problem is ill-posed. That
+time, Hadamard though that ill-posed problems have no physical meaning. However, as
+shown, for example, in [3, 4, 5, 6] many problems in Science and practice are ill-posed. In
+1943, Tikhonov [9] realized that a problem is ill-posed due to the lack of information on
+the solution and he introduced the notion of conditional well-posedness. In 1963, Tikhonov
+[10] created the so-called Tikhonov regularization method to stabilize ill-posed problems and
+since then the theory of ill-posed problems has been intensively developed [3, 4, 5, 6, 12, 11].
+It seems that Lavrent’ev, Landis and Pucci are the first who studied the Cauchy problem
+for elliptic equations from the viewpoint of ill-posed problems [13, 14, 15, 16, 17, 18, 19, 20]
+and up to now there have been many papers devoted to this problem; for surveys on them,
+the reader can consult [4, 5, 6, 12, 21, 22] and the references therein. Further, we note that
+in [23, 24] it was investigated the ill-posedness of Cauchy problems for elliptic equations
+based on the analysis of the singular values of the continuation problem operator obtained
+analytically. In [25], it was made numerical analysis of the Horizontally Diagonalize and
+Fit (HDF) method and Landweber iteration for the 3D Cauchy problem for the Poisson
+equation. HDF discretizes horizontal variables and transforms the 3D problem into a series
+of decoupled 1D problems in the vertical dimension which significantly reduces the size of
+problem. It was shown that the number of 1D problems is a regularization parameter.
+Payne and his collaborators started studying the Cauchy problem for nonlinear elliptic equa-
+tions (CPNlEE) in the sixties of the last century [26], [27], [28]–[34] and [35]. In this series of
+work the authors proved several pointwise estimates for the solution of the Cauchy problem
+based on the log-convexity method. It seems to us that the research on CPNlEE in the
+last century is very moderate, we could not find other papers accept for the above ones. In
+this century, Kügler and Leitão (2003)[36] seem to be the first to consider CPNlEE. There
+they formulated CPNlEE as a variational problem or a fixed point problem and solved that
+by Mean value iterations. This research has been also adapted in [37]. Ly and Tarkhanov
+[38, 39, 40] investigated the problem from a rather theoretical point of view. The authors
+
+                                                 2
+proved some existence results and proposed some variational formulations for the problem.
+Some results are presented by Kallel et al [41], Andrieux and Baranger [42]. So, the research
+on CPNlEE is quite few. To our best knowledge there has been no global stability estimate
+and stable numerical methods are quite sparse.
+As mentioned above, although there have been many papers devoted to theoretical aspects
+of the Cauchy problem for elliptic equations, those to numerical aspects of that for multi-
+dimensional nonlinear problems are quite few. This paper is an attempt to stably solving the
+Cauchy problem for multi-dimensional nonlinear elliptic equations. Namely, we reformulate
+the Cauchy problem as a least squares problem and then stabilize it by Tikhonov regulariza-
+tion method. We solve the last in the framework of artificial neural networks (ANN), while
+the regularization parameter is chosen by the discrepancy principle or the L-curve method.
+Numerical simulations show that the approach is efficient for this severely ill-posed, multi-
+dimensional and nonlinear problem. We note that Li and Hu [43] have used ANN for solving
+the Cauchy problem for elliptic and parabolic equations, however, when we implemented
+their algorithms, the numerical solutions were not stable. We thought that solely ANN can-
+not overcome the ill-posedness, therefore, in this paper we still use the standard Tikhonov
+regularization method to stabilize the solution to the Cauchy problem, ANN are applied to
+minimize the Tikhonov functional. So, ANN are only a tool for solving complicated non-
+convex minimization problems arising in inverse problems, not a regularization method as
+claimed in some previous reports.
+
+
+
+2     Problem Setting
+Let Ω be a bounded domain in Rd , d ≥ 2, with boundary ∂Ω, and let Γ1 ⊂ ∂Ω be a subset
+of the boundary. Let L be a linear or nonlinear elliptic operator. We consider the Cauchy
+problem for the elliptic equation given by
+                                    
+                                    Lu(x) = h in Ω,
+                                    
+                                      u(x) = f   on Γ1 ,                             (2.1)
+                                     ∂u(x)
+                                    
+                                       ∂n
+                                            =g   on Γ1 ,
+
+where ∂u(x)
+          ∂n
+                denotes the generalized normal derivative on the boundary, dependent on the
+elliptic operator L. Suppose the right-hand side and Cauchy data are approximately given
+by hδ , f δ , and g δ , satisfying
+
+               ∥h − hδ ∥L2 (Ω) ≤ δ1 ,   ∥f − f δ ∥L2 (Γ1 ) ≤ δ2 ,   ∥g − g δ ∥L2 (Γ1 ) ≤ δ3 ,   (2.2)
+
+where δ1 , δ2 , δ3 > 0 represent the noise levels.
+To solve (2.1), we reformulate it as an operator equation:
+                                                          
+                                                   Lu        h
+                        Au = b, where Au = u|Γ1 , b = f  .
+                                                                                             (2.3)
+                                                  ∂u
+                                                     |
+                                                  ∂n Γ1
+                                                             g
+In this paper, we assume that the equation and boundary conditions are understood in the
+classical sense. Furthermore, we assume that
+
+                    A : L2 (Ω) → L2 (Ω) × L2 (Γ1 ) × L2 (Γ1 ),        f, g ∈ L2 (Γ1 ).
+
+                                                     3
+Note that, in general, A is nonlinear, and the Neumann condition may also be nonlinear,
+making (2.3) a nonlinear problem.
+Let bδ = [hδ , f δ , g δ ]T . We aim to solve (2.3) with noisy data bδ , satisfying
+
+                ∥b − bδ ∥ := ∥h − hδ ∥L2 (Ω) + ∥f − f δ ∥L2 (Γ1 ) + ∥g − g δ ∥L2 (Γ1 ) ≤ δ,     (2.4)
+
+where δ = δ1 + δ2 + δ3 .
+A standard approach to solve (2.3) is the least squares method, which involves minimizing
+the misfit functional
+                                                                                     2
+                                                                           ∂u
+                  J(u) = ∥Lu − hδ ∥2L2 (Ω) + ∥u − f δ ∥2L2 (Γ1 ) +            − gδ              (2.5)
+                                                                           ∂n      L2 (Γ1 )
+
+with respect to u in an admissible set. Since this problem is well-known to be severely
+ill-posed, we regularize it by minimizing the Tikhonov functional
+                                                                                2
+                                                                  ∂u
+            Jα (u) = ∥Lu − hδ ∥2L2 (Ω) + ∥u − f δ ∥2L2 (Γ1 ) +       − gδ          + αΦ(u),     (2.6)
+                                                                  ∂n      L2 (Γ1 )
+
+where α > 0 is the regularization parameter, and Φ(u) is the Tikhonov regularization term,
+which will be specified later.
+There are two problems with this method for (2.3). The first problem is the functional
+J(u) is nonconvex, therefore to find its global minimizers is not trivial, the second one is
+how to choose the regularization parameter to warrant that the solution of the minimization
+problem (2.6) well approximates the exact solution to (2.3) despite the noisy data. To find
+global minimizers we follow Li and Hu [43] in finding them in the class of ANN by L-BFGS,
+not by ADAM as these authors did.
+
+
+
+3     Finding the Global Minimizers of the Tikhonov Func-
+      tional via ANN
+In this section, we present a method for finding the global minimizers of the Tikhonov
+functional, as defined in equation (3.1), within the class of ANNs. We consider deep, fully
+connected feedforward ANNs with L hidden layers, where the input layer is denoted as
+layer 0 and the output layer as layer L + 1. The k-th layer consists of nk neurons. The
+weights and biases of the k-th layer are represented by a weight matrix W k ∈ Rnk ×nk−1 and
+a bias vector bk ∈ Rnk , respectively. For an activation function σk , applied element-wise for
+k = 1, 2, . . . , L + 1, the k-th layer map lk : Rnk−1 → Rnk is defined as
+
+                                        lk (z) = σk (W k z + bk ).
+
+Let θ = (W 1 , b1 , W 2 , b2 , . . . , W L+1 , bL+1 ) denote the collection of all weights and biases.
+Setting σL+1 as the identity function, the feedforward neural network is defined as
+
+                                    uθ (x) = lL+1 ◦ lL ◦ · · · ◦ l1 (x),
+
+which maps an input x ∈ Rn0 to an output uθ ∈ RnL+1 .
+
+                                                     4
+The Tikhonov functional is minimized over the class of ANNs as follows:
+
+                                                  min Jα (uθ ),                                      (3.1)
+                                                   θ
+
+where uθ : Ω → R is the neural network parameterized by weights w and biases b.
+To solve (3.1), we randomly select points xin = {x1 , x2 , . . . , xN } ⊂ Ω, with No , Nd , Nn , and
+Nk denoting the number of points in Ω, on the Dirichlet boundary Γ1 , on the Neumann
+boundary Γ1 , and for regularization, respectively, such that No + Nd + Nn + Nk = N . The
+Tikhonov functional (3.1) is discretized as
+
+                       JαN (ū) = JoN (ū) + JdN (ū) + JnN (ū) + αΦN (ū)
+                                       No                           Nd
+                                    1 X                   2      1 X                 2
+                               =            Lū(xi ) − hδi +            ū(xi ) − fiδ
+                                   No i=1                       Nd i=1                               (3.2)
+                                          Nn                  2      Nk
+                                      1 X      ∂ ū(xi )     δ      α X
+                                   +                     − gi     +        ΦN (ū(xi )),
+                                     Nn i=1       ∂n                Nk i=1
+
+where ū(xi ) = uθ (xi ), fiδ = f δ (xi ), giδ = g δ (xi ), and ΦN (ū) is a regularization functional
+defined in one of the following forms:
+                             NΓ
+                          1 X2          2
+       ∥ū∥2L2 (Γ2 ) =           ū(xi ) ,
+                         NΓ2 i=1
+                       No
+                    1 X           2
+       ∥ū∥2L2 (Ω) =       ū(xi ) ,
+                    No i=1
+              2            NΓ          2
+         ∂ ū           1 X2 ∂ ū(xi )
+                    =                      ,
+         ∂n L2 (Γ2 ) NΓ2 i=1         ∂n
+                                                          No               No X d            2
+                                                       1 X           2 1 X         ∂ ū(xi )
+       ∥ū∥2H 1 (Ω) = ∥ū∥2L2 (Ω) + ∥∇ū∥2L2 (Ω) =            ū(xi ) +                          ,
+                                                       No i=1           No i=1 j=1    ∂xj
+
+with Γ2 = ∂Ω \ Γ1 .
+The gradients of the discretized functional with respect to the weights and biases are com-
+puted using backpropagation:
+
+       ∂JαN (ū)  ∂J N (ū) ∂JdN (ū) ∂JnN (ū)            ∂ΦN (ū)
+                 = o        +            +           +α
+         ∂w         ∂w           ∂w           ∂w             ∂w
+                           No                                    Nd
+                      1 X                    δ ∂Lū(xi )      1 X                   ∂ ū(xi )
+                                                                     ū(xi ) − fiδ
+                                              
+                 =2            Lū(xi ) − hi               +                                         (3.3)
+                     No i=1                       ∂w         Nd i=1                    ∂w
+                         Nn                  2          !
+                    1 X       ∂ ū(xi )    δ    ∂ ū(xi )       ∂ΦN (ū)
+                  +                     − gi                +α           ,
+                    Nn i=1       ∂n              ∂n∂w             ∂w
+
+
+
+
+                                                         5
+and similarly,
+
+       ∂JαN (ū)  ∂J N (ū) ∂JdN (ū) ∂JnN (ū)            ∂ΦN (ū)
+                 = o        +            +           +α
+         ∂b         ∂b           ∂b            ∂b            ∂b
+                           No                                    Nd
+                      1 X                    δ ∂Lū(xi )     1 X                     ∂ ū(xi )
+                                                                      ū(xi ) − fiδ
+                                              
+                 =2            Lū(xi ) − hi               +                                      (3.4)
+                     No i=1                       ∂b         Nd i=1                      ∂b
+                         Nn                  2          !
+                    1 X       ∂ ū(xi )    δ    ∂ ū(xi )      ∂ΦN (ū)
+                  +                     − gi                +α           .
+                    Nn i=1       ∂n              ∂n∂b              ∂b
+
+
+4      Training algorithms for networks and regularization
+       parameter choices
+A typical algorithm used for training networks is ADAM. Indeed, the authors of [43] used
+ADAM for implementing their method. However, when we applied ADAM to the Cauchy
+problem for elliptic equations, it did not provide good, stable numerical results, especially
+for 2D and 3D nonlinear elliptic equations. Therefore, in this note we will use the L-BFGS
+method (Limited-memory Broyden–Fletcher–Goldfarb–Shanno algorithm) [44].
+This algorithm is a type of quasi-Newton method, which shows its efficiency and flexibility
+in solving unconstrained optimization problems. With its limited storage structure, L-BFGS
+is very suitable for optimizing neural network models, especially when the model has a large
+number of parameters. Instead of calculating the full Hessian matrix like traditional Newton
+methods, L-BFGS only needs to store and update approximations of the inverse Hessian
+matrix to reduce the computational cost.
+Let θ := (w, b) denote the vector of all trainable parameters of the network (weights and
+biases). The update rule is given by
+
+                                         θk+1 = θk − βHk ∇Jα (θk ),                               (4.1)
+
+where ∇Jα (θk ) is the gradient of the cost functional Jα at the k-th iteration, β is a learning
+coefficient, and Hk is the inverse Hessian approximation at step k. The matrix Hk is updated
+according to the BFGS formula
+
+                        Hk+1 = I − ρk sk ykT Hk I − ρk yk sTk + ρk sk sTk ,
+                                                            
+                                                                                            (4.2)
+
+with
+                           1
+                  ρk =            ,   sk = θk+1 − θk ,       yk = ∇Jα (θk+1 ) − ∇Jα (θk ).        (4.3)
+                         ykT sk
+
+These formulas describe the process of updating the inverse Hessian approximation Hk based
+on the history of the correction pairs (sk , yk ). This process approximates the curvature
+information of the objective function and ensures that Hk remains positive definite. By
+updating the parameter vector θ according to (4.1), the L-BFGS method efficiently optimizes
+the objective function and adjusts the neural network parameters to achieve stable and
+accurate results when solving the Cauchy problem.
+
+
+                                                         6
+Algorithm 1 L-BFGS Method for Solving the Cauchy Problem
+ 1: procedure L-BFGS
+ 2:    Input: Sample points xi ∈ Ω; noisy data f δ , g δ , hδ ;
+ 3:    Input: Number of hidden layers L; number of neurons N ;
+ 4:    Initialize the neural network structure;
+ 5:    Initialize parameters θ0 (weights and biases);
+ 6:    Initialize the inverse Hessian approximation H0 = I;
+ 7:    for k = 0, 1, 2, . . . , until convergence criterion is met do
+ 8:        Compute network outputs uθ (xi ) for all sample points xi ∈ Ω;
+ 9:        Evaluate the objective functional Jα (θk ) given by (3.2);
+10:        Compute the gradient gk = ∇Jα (θk );
+11:        Compute the search direction dk = −Hk gk ;
+12:        Update the parameters: θk+1 = θk + βdk ;
+13:        Set sk = θk+1 − θk , yk = gk+1 − gk ;
+14:        Update the inverse Hessian approximation Hk+1 via (4.2);
+15:    end for
+16:    Output: Minimized functional Jα ;
+17:    Output: The reconstructed solution ū of the Cauchy problem;
+18: end procedure
+
+
+
+The above process is run for a fix regularization parameter α. To define the ”right” reg-
+ularization parameter which yields optimal error of the method, we apply the discrepancy
+principle (a posteriori method) and the L-curve method for the Tikhonov functional (3.1),
+see, e.g. [11], [45]). The discrepancy principle chooses the regularization parameter α in the
+(2.6) such that
+                                     ∥Luδα − hδ ∥2L2 (Ω) = τ δ,
+where uδα is the solution to the optimization problem (3.1), τ > 1. In all our numerical tests,
+we chose τ = 1.1.
+
+
+
+5     Numerical examples
+This section reports numerical experiments conducted to assess the effectiveness of ANNs
+in solving the Cauchy problem for both linear and nonlinear cases. The training process
+employs the Algorithm 1 (L-BFGS) to optimize the network parameters. The regularization
+parameter α is selected based on the L-curve method in conjunction with the discrepancy
+principle. All numerical experiments are carried out using Python 3.10.
+
+
+5.1    Data Generation and Error Evaluation
+
+The numerical experiments utilize synthetic data, where the exact solution to the Cauchy
+problem, denoted uexact (x), is known, along with the exact data for the source term hexact (x),
+Dirichlet boundary condition f exact (x), and Neumann boundary condition g exact (x). To
+simulate realistic measurement conditions, Gaussian noise is introduced to the exact data,
+
+
+                                               7
+generating noisy data according to the following formulation:
+                         
+                             δ       exact
+                         h (x) = h
+                                          (x) + σh ξh (x), x ∈ Ω,
+                             δ        exact
+                           f (x) = f        (x) + σf ξf (x), x ∈ Γ1 ,                             (5.1)
+                         
+                          δ         exact
+                           g (x) = g       (x) + σg ξg (x), x ∈ Γ1 ,
+
+where ξh , ξf , ξg ∼ N (0, 1) are standard normal random variables, and σh , σf , σg > 0 represent
+the respective noise levels.
+To assess the accuracy of the ANN approximate solution, ucomp         α      (x), relative to the exact
+            exact
+solution, u       (x), the L2 error is computed using N data points sampled from the domain
+Ω. The L2 error is defined as:
+                                    v
+                                    u
+                                    u1 X  N
+                              L2 =  t        (ucomp
+                                               α    (xi ) − uexact (xi ))2 ,                       (5.2)
+                                       N i=1
+
+where {xi }N
+           i=1 ⊂ Ω represents a set of randomly selected interior and boundary points within
+the domain. The L2 error quantifies the performance of the ANN in approximating the
+solution to the Cauchy problem.
+
+5.2     Linear Examples
+
+Consider the following Cauchy problem for the two-dimensional Laplace equation:
+                 
+                 
+                       ux1 x1 + ux2 x2 = 0,       in (x1 , x2 ) ∈ (0, l) × (0, k),
+                 
+                 u(0, x2 ) = u(l, x2 ) = 0,
+                 
+                                                  x2 ∈ (0, k),
+                            ∂u                                                                    (5.3)
+                                (x1 , 0) = 0,     x1 ∈ (0, l),
+                 
+                 
+                 
+                          ∂x  2
+                               u(x1 , 0) = φ(x1 ), x1 ∈ (0, l),
+                 
+
+where u(x1 , x2 ) is the solution, φ(x1 ) is a given function.
+The objective is to approximate the solution at the boundary x2 = k, defined as v(x1 ) :=
+u(x1 , k), and evaluate the algorithm’s performance for different smoothness conditions of
+u(x1 , k):
+   1. u(x1 , k) is a very smooth function,
+
+   2. u(x1 , k) is a hat function,
+
+   3. u(x1 , k) is a step function.
+                                                                                       1
+Note that in the third case, u(x1 , k) does not belong to the Sobolev space H 2 (0, l), making
+it a non-standard and challenging case.
+Since the exact solution to problem (5.3) is generally unavailable for the specified test cases,
+we adopt a three-step numerical approach using ANNs to approximate the solution, incor-
+porating noisy data.
+Step 1: Solving the Forward Problem
+
+
+
+                                                   8
+First, we solve the forward problem with a modified boundary condition at x2 = k:
+                  
+                  
+                        ux1 x1 + ux2 x2 = 0,      in (x1 , x2 ) ∈ (0, l) × (0, k),
+                  
+                  u(0, x2 ) = u(l, x2 ) = 0,
+                  
+                                                  x2 ∈ (0, k),
+                             ∂u                                                            (5.4)
+                                (x1 , 0) = 0,     x1 ∈ (0, l),
+                  
+                  
+                  
+                           ∂x2
+                               u(x1 , k) = v(x1 ), x1 ∈ (0, l),
+                  
+
+where v(x1 ) is the prescribed boundary data at x2 = k. Using ANNs, we compute the
+solution u(x1 , x2 ) and obtain the approximate boundary data at x2 = 0, denoted as u(x1 , 0) =
+A[data].
+Step 2: Data Processing with Gaussian Noise
+To simulate realistic scenarios, we introduce Gaussian noise to the approximate boundary
+data A[data]. The noisy data uδ (x1 ) is generated as follows:
+
+                                 uδ (x1 ) = A[data] + σ ξ(x1 ),                            (5.5)
+
+where A[data] is the approximate boundary data obtained from Step 1, ξ(x1 ) ∼ N (0, 1) is a
+standard normal random variable with zero mean and unit variance, and σ > 0 is the noise
+level controlling the magnitude of the perturbation.
+This noisy data uδ (x1 ) is used in the subsequent step to test the robustness of the algorithm
+under realistic conditions.
+Step 3: Solving the Inverse Problem (Solving the Cauchy Problem)
+Next, we use the noisy boundary data uδ (x1 ) to solve the following Cauchy problem:
+                
+                
+                      ux1 x1 + ux2 x2 = 0,         in (x1 , x2 ) ∈ (0, l) × (0, k),
+                
+                u(0, x2 ) = u(l, x2 ) = 0,
+                
+                                                   x2 ∈ (0, k),
+                           ∂u                                                        (5.6)
+                              (x1 , 0) = 0,        x1 ∈ (0, l),
+                
+                
+                
+                         ∂x2
+                              u(x1 , 0) = uδ (x1 ), x1 ∈ (0, l).
+                
+
+From this, we compute an approximate solution uα (x1 , x2 ) and evaluate it at the boundary
+x2 = k to obtain vα (x1 ) := uα (x1 , k).
+Finally, we compare the prescribed boundary data v(x1 ) from the forward problem (5.4)
+with the approximated boundary data vα (x1 ) obtained from the inverse problem (5.6). The
+comparison, conducted under the influence of Gaussian noise as described in (5.5), allows us
+to assess the accuracy and robustness of the algorithm across the three test cases of varying
+smoothness, as detailed in Examples 5.1, 5.2, and 5.3.
+
+Example 5.1. The case where u(x1 , k) is a very smooth function. We take l = π,
+k = 1 and u(x1 , 1) = v(x1 ) = sin x1 cosh 1. The exact solution of the problem is u(x1 , x2 ) =
+sin(x1 ) cosh(x2 ).
+
+In this example, the ANN model consists of 3 hidden layers, each with 7 neurons and using
+the tanh activation function. The training dataset includes Nr = 10000 residual points
+for the forward problem and Nr = 5000 residual points for the inverse problem, randomly
+
+                                               9
+sampled in the domain (0, π) × (0, 1). Additionally, there are Nb = 1000 boundary points
+randomly selected on x1 = 0, x1 = π, and x2 = 1 for the forward problem, or x2 = 0 for the
+inverse problem. For the inverse problem, there are also Ncauchy = 1000 points at x2 = 0,
+and for the Tikhonov regularization term, Nk = 500 points are sampled on Γ2 .
+Gaussian noise is added to the data following Step 2, according to formula (5.5), with
+σ ∈ {0.01, 0.03, 0.05, 0.075}, corresponding to noise levels of 1%, 3%, 5%, and 7.5%. Training
+is performed using the Algorithm 1.
+The results are compared between ucomp  α   (x1 , 1), the ANN solution, and the exact solution
+uexact (x1 , 1) at 500 evenly spaced points x1 ∈ [0, 5π] with x2 = 1. The numerical results for
+this example are presented in Figures 1 and Table 1.
+
+
+                         Exact Solution                                                     ANN Solution, noise 3%                                                            Error, noise 3%
+
+
+
+
+1.4                                                                       1.4                                                                       0.08
+1.2                                                                       1.2                                                                       0.06
+1.0                                                                       1.0                                                                       0.04
+ 0.8                                                                       0.8                                                                      0.02
+ 0.6                                                                       0.6                                                                       0.00
+ 0.4                                                                       0.4                                                                      −0.02
+ 0.2                                                                        0.2                                                                     −0.04
+  0.0                                                                       0.0                                                                     −0.06
+
+    0.0                                                        0.0            0.0                                                             0.0        0.0                                                   0.0
+          0.2                                               0.5                     0.2                                                    0.5                 0.2                                          0.5
+                                                         1.0                                                                            1.0                                                              1.0
+                0.4                                                                       0.4                                                                        0.4
+                                                      1.5                                                                            1.5                                                              1.5
+                x2 0.6                             2.0 x 1                                x2 0.6                                  2.0 x 1                            x2 0.6                        2.0 x 1
+                         0.8                    2.5                                                0.8                         2.5                                            0.8               2.5
+                                1.0       3.0                                                              1.0           3.0                                                        1.0   3.0
+
+
+
+
+                                           Exact vs. ANN Solution at x2 = 1                                                            Absolute Error at x2 = 1
+                                    1.6
+                                                                                                                      0.175             1%
+                                    1.4                                                                                                 3%
+                                                                                                                      0.150
+                                                                                                                                        5%
+                                    1.2
+                                                                                                                      0.125             7.5%
+                                                                                                     Absolute Error
+
+
+
+
+                                    1.0
+                         u(x1, 1)
+
+
+
+
+                                                                                                                      0.100
+                                    0.8
+                                                                                                                      0.075
+                                    0.6                              Exact
+                                    0.4                              1%                                               0.050
+                                                                     3%
+                                    0.2                              5%                                               0.025
+                                                                     7.5%
+                                    0.0                                                                               0.000
+                                          0                1              2                 3                                   0              1         2                    3
+                                                                     x1                                                                             x1
+
+Figure 1: Exact and ANN solutions at x2 = 1. The regularization parameter is selected
+using the discrepancy principle. The chosen regularization function is ∥∂u(·, 1)/∂x2 ∥2L2 (Γ2 ) .
+
+                                    Noise               α   Iteration Time/Iter    Loss   L2 (x2 = 1)
+                                    1%               0.0069   1000      0.141   2.422e-03  0.00380
+                                    3%               0.0215   1000      0.145   4.873e-03  0.03279
+                                    5%               0.0532   1000      0.165   6.642e-03  0.07616
+                                    7.5%             0.0837   1000      0.183   8.153e-03  0.18127
+
+Table 1: Numerical results obtained using the L-BFGS algorithm. The regularization pa-
+rameter α was determined using the discrepancy principle.
+
+
+                                                                                                   10
+Example 5.2. The case where u(x1 , k) is a hat function.
+We consider the case l = π, k = 1, where the exact solution at x2 = 1 is given by the hat
+function
+                                             2               h πi
+                                           
+                                            x1 ,
+                                                       x1 ∈ 0,     ,
+                      u(x1 , 1) = v(x1 ) =   π                   2
+                                           2 − 2 x 1 , x 1 ∈ π , π .
+                                                                  
+                                           
+                                                π              2
+
+In this example, the ANN model consists of 3 hidden layers, each with 7 neurons and using
+the tanh activation function. The training dataset includes Nr = 10000 residual points
+for the forward problem and Nr = 5000 residual points for the inverse problem, randomly
+sampled in the domain (0, π) × (0, 1). Additionally, there are Nb = 1500 boundary points
+randomly selected on x1 = 0, x1 = π, and x2 = 1 for the forward problem, or x2 = 0 for the
+inverse problem. For the inverse problem, there are also Ncauchy = 1500 points at x2 = 0,
+and for the Tikhonov regularization term, Nk = 500 points are sampled on Γ2 .
+Gaussian noise is added to the data following Step 2, according to formula (5.5), with
+σ ∈ {0.01, 0.03, 0.05, 0.07}, corresponding to noise levels of 1%, 3%, 5%, and 7%. Training
+is performed using the Algorithm 1.
+The results are compared between ucomp  α   (x1 , 1), the ANN solution, and the exact solution
+ exact
+u      (x1 , 1) at 500 evenly spaced points x1 ∈ [0, 5π] with x2 = 1. The numerical results for
+this example are presented in Figures 2 and Table 2.
+
+                                                           ANN Solution, noise 5%
+
+
+
+
+                                              0.8
+                                              0.6
+                                              0.4
+                                               0.2
+                                               0.0
+                                                     0.0                                                          0
+                                                        0.2
+                                                           0.4                                            1
+                                                           x2 0.6                                   2
+                                                                 0.8                                     x1
+                                                                       1.0                  3
+
+
+
+                                 Exact vs. ANN Solution at x2 = 1                                       Absolute Error at x2 = 1
+                           1.0                                                                                                     1%
+                                                                                         0.20                                      3%
+                           0.8                                                                                                     5%
+                                                                                                                                   7%
+                                                                        Absolute Error
+
+
+
+
+                                                                                         0.15
+                           0.6
+                u(x1, 1)
+
+
+
+
+                                                                                         0.10
+                           0.4
+                                                Exact
+                                                1%
+                           0.2                  3%                                       0.05
+                                                5%
+                           0.0                  7%
+                                                                                         0.00
+                                 0        1            2        3                               0             1            2       3
+                                               x1                                                                     x1
+
+Figure 2: Exact and ANN solution at x2 = 1. The regularization parameter is selected using
+the discrepancy principle. The chosen regularization function is ∥∂u(·, 1)/∂x2 ∥2L2 (Γ2 ) .
+
+                                                                       11
+            Noise        α          Iteration Time/Iter    Loss   L2 (x2 = 1)
+            1%      2.51 × 10−4       1000      0.153   2.152e-04  0.02097
+            3%      3.25 × 10−4       1000      0.156   4.163e-04  0.04652
+            5%      6.73 × 10−4       1000      0.159   1.273e-03  0.06349
+            7%      8.91 × 10−4       1000      0.161   4.624e-03  0.17163
+
+Table 2: Numerical results obtained using the L-BFGS algorithm. The regularization pa-
+rameter α was chosen via the discrepancy principle.
+
+Example 5.3. The case where u(x1 , k) is a step function. We take l = 5π, k = 1 and
+                                       (
+                                        0, x1 ∈ 0, 5π
+                                                       10π 
+                                                    3
+                                                       ∪ 3 ,π ,
+                  u(x1 , 1) = v(x1 ) =           5π 10π
+                                                        
+                                        1, x1 ∈ 3 , 3 .
+
+
+
+In this example, the ANN model consists of 4 hidden layers, each with 7 neurons and using
+the tanh activation function. The training dataset includes Nr = 10000 residual points
+for the forward problem and Nr = 6000 residual points for the inverse problem, randomly
+sampled in the domain (0, 5π) × (0, 1). Additionally, there are Nb = 2000 boundary points
+randomly selected on x1 = 0, x1 = 5π, and x2 = 1 for the forward problem, or x2 = 0 for the
+inverse problem. For the inverse problem, there are also Ncauchy = 2000 points at x2 = 0,
+and for the Tikhonov regularization term, Nk = 500 points are sampled on Γ2 .
+Gaussian noise is added to the data following Step 2, according to formula (5.5), with
+σ ∈ {0.01, 0.03, 0.05}, corresponding to noise levels of 1%, 3% and 5%, respectively. Training
+is performed using the Algorithm 1.
+The results are compared between ucomp  α   (x1 , 1), the ANN solution, and the exact solution
+uexact (x1 , 1) at 600 evenly spaced points x1 ∈ [0, 5π] with x2 = 1. The numerical results for
+this example are presented in Figures 3 and Table 3.
+
+
+                                      ANN Solution, noise 3%
+
+
+
+
+                             1.0
+                             0.8
+                             0.6
+                              0.4
+                              0.2
+                              0.0
+
+                                0.0                                    0
+                                   0.2
+                                      0.4                         5
+                                      x2 0.6                 10
+                                            0.8                   x1
+                                                  1.0   15
+
+
+
+
+                                                  12
+                          Exact vs. ANN Solution at x2 = 1                                Absolute Error at x2 = 1
+
+                                                      Exact                     0.5                                  1%
+                1.0
+                                                      1%                                                             3%
+                                                      3%                                                             5%
+                0.8                                                             0.4
+                                                      5%
+
+
+
+
+                                                               Absolute Error
+                0.6
+     u(x1, 1)
+
+                                                                                0.3
+
+                0.4                                                             0.2
+
+                0.2
+                                                                                0.1
+
+                0.0
+                                                                                0.0
+                      0            5         10         15                            0        5         10          15
+                                        x1                                                          x1
+
+Figure 3: Exact and ANN solutions at x2 = 1. The regularization parameter is selected
+using the discrepancy principle. The chosen regularization function is ∥u(·, 1)∥2L2 (Γ2 ) .
+
+                      Noise           α           Iteration Time/Iter    Loss   L2 (x2 = 1)
+                      1%         2.91 × 10−5        1500      0.241   2.420e-03  0.08979
+                      3%         4.71 × 10−5        1500      0.244   6.170e-03  0.11353
+                      5%         6.57 × 10−5        1500      0.251   8.546e-03  0.15312
+
+Table 3: Numerical results obtained using the L-BFGS algorithm. The regularization pa-
+rameter α was determined using the discrepancy principle.
+
+Example 5.4. The Cauchy problem for the 2D Poisson equation in a circle. Let Ω
+be a circle and Γ1 be the half arc length of it, as illustrated in Figure 4, where ∂Ω = Γ1 ∪ Γ2
+and Γ1 ∩ Γ2 = ∅.
+We consider the following Cauchy problem:
+                 
+                 
+                   ∆u(x) = −2 sin(x1 ) cos(x2 ),                  x ∈ Ω,
+                 
+                 
+                    u(x) = sin(x1 ) cos(x2 ) + ex1 sin(x2 ),       x ∈ Γ1 ,
+                 
+                 
+                  ∂u(x)
+                                                            
+                     ∂n
+                         = ∇ sin(x1 ) cos(x2 ) + ex1 sin(x2 ) · n, x ∈ Γ1 ,
+
+where n denotes the outward unit normal vector at the boundary. The exact solution of this
+problem is
+                           u(x) = sin(x1 ) cos(x2 ) + ex1 sin(x2 ).
+
+In this example, the ANN model consists of 5 hidden layers, each with 7 neurons and using
+the tanh activation function. The training data set consists of Nr = 5000 points inside Ω
+and Nb = 1500 points on the boundary Γ1 . In addition, for the Tikhonov regularization
+term, Nk = 500 points are sampled on Γ2 .
+Gaussian noise is added to the data according to formula (5.1), with σ ∈ {0.01, 0.03, 0.05},
+corresponding to noise levels of 1%, 3% and 5%, respectively. Training is performed using
+the Algorithm 1. The chosen regularization function is ∥∂u/∂n∥2L2 (Γ2 ) .
+
+
+                                                              13
+The results are compared between ucomp  α   (x1 , x2 ), the ANN solution, and the exact solution
+ exact
+u      (x1 , x2 ) at 500 evenly spaced points with x = (x1 , x2 ) ∈ Ω. The numerical results are
+reported in Figures 4 and Table 4.
+
+                                                                                  Data
+
+
+                                                           0.4      Γ1
+
+
+
+                                                           0.2
+
+
+
+                                                                                      Ω
+
+
+
+
+                                                    x2
+                                                           0.0
+
+
+
+                                                         −0.2
+
+
+
+                                                         −0.4                                     Γ2
+
+
+
+                                                                   −0.4    −0.2       0.0   0.2   0.4
+                                                                                      x1
+
+
+                    Exact solution                                         ANN solution                                            Absolute error
+                                                                                                                                                            0.090
+      0.4                                   0.75          0.4                                                         0.4
+                                                                                                        0.75
+                                                                                                                                                            0.072
+                                            0.60
+                                                                                                        0.60
+                                                                                                                                                            0.054
+      0.2                                   0.45          0.2                                                         0.2
+                                                                                                        0.45
+                                                                                                                                                            0.036
+                                            0.30
+                                                                                                        0.30
+                                                                                                                                                            0.018
+                                            0.15
+x2
+
+
+
+
+                                                    x2
+
+
+
+
+                                                                                                                x2
+      0.0                                                 0.0                                           0.15          0.0
+                                                                                                                                                            0.000
+                                            0.00
+                                                                                                        0.00
+                                                                                                                                                            −0.018
+                                            −0.15
+     −0.2                                                −0.2                                           −0.15        −0.2
+                                                                                                                                                            −0.036
+                                            −0.30
+                                                                                                        −0.30                                               −0.054
+                                            −0.45
+     −0.4                                                −0.4                                           −0.45        −0.4
+                                                                                                                                                            −0.072
+
+            −0.4   −0.2   0.0   0.2   0.4                        −0.4     −0.2    0.0       0.2   0.4                       −0.4   −0.2   0.0   0.2   0.4
+                          x1                                                      x1                                                      x1
+
+
+
+
+Figure 4: Exact solution, ANN solution, and error in the case of 5% noise. The regular-
+ization parameter α = 8.19 × 10−5 is selected using the discrepancy principle. The chosen
+regularization function is ∥∂u/∂n∥2L2 (Γ2 ) .
+
+                          Noise            α                 Iteration Time/Iter    Loss     L2
+                          1%          2.14 × 10−5              1000      0.091   2.563e-03 0.0185
+                          3%          4.37 × 10−5              1000      0.095   5.127e-03 0.0312
+                          5%          8.19 × 10−5              1000      0.098   7.379e-03 0.0512
+
+Table 4: The numerical result for the problem using the L-BFGS algorithm. The regular-
+ization parameter is selected using the discrepancy principle.
+
+Example 5.5. The Cauchy problem for the 3D Poisson equation. Let Ω ⊂ R3 be
+the cube
+                   Ω = {(x1 , x2 , x3 ) ∈ R3 | 0 ≤ x1 , x2 , x3 ≤ 1},
+and define subsets of its boundary:
+
+                   Γ1 := {(x1 , x2 , 0) | 0 ≤ x1 , x2 ≤ 1},                           Γ2 := {(x1 , x2 , 1) | 0 ≤ x1 , x2 ≤ 1},
+                   Γ3 := {(0, x2 , x3 ) | 0 ≤ x2 , x3 ≤ 1},                           Γ4 := {(1, x2 , x3 ) | 0 ≤ x2 , x3 ≤ 1},
+                   Γ5 := {(x1 , 0, x3 ) | 0 ≤ x1 , x3 ≤ 1},                           Γ6 := {(x1 , 1, x3 ) | 0 ≤ x1 , x3 ≤ 1}.
+
+
+
+
+                                                                                 14
+Consider the Cauchy problem:
+
+               2(x2 − x22 )(x23 + 3x3 − 2) 2(x23 + 3x3 − 2) 2(x2 − x22 )
+   
+   
+    ∆u(x)  =                             −                +             ,                                                                                                    x ∈ Ω,
+                        (x1 + 2)2                x1 + 2       x1 + 2
+   
+   
+   
+               2(x2 − x22 )
+   
+   
+   
+   
+    u(x) =  −              ,                                                                                                                                                 x ∈ Γ1 ,
+                 x   + 2
+   
+                   1
+   
+   
+                 3(x2 − x22 )
+   
+    ∂u(x)
+   
+   
+            =−                ,                                                                                                                                               x ∈ Γ1 ,
+       ∂n           x1 + 2
+            1
+     u(x) = (x2 − x22 )(x23 + 3x3 − 2),                                                                                                                                       x ∈ Γ3 ,
+   
+   
+   
+   
+   
+            2
+             1
+   
+   
+     u(x) = (x2 − x22 )(x23 + 3x3 − 2),                                                                                                                                       x ∈ Γ4 ,
+   
+   
+   
+   
+   
+            3
+   
+     u(x) = 0,                                                                                                                                                                x ∈ Γ5 ∪ Γ6 .
+   
+
+The exact solution of this problem is
+
+                                                                               (x2 − x22 )(x23 + 3x3 − 2)
+                                                                        u(x) =                            .
+                                                                                         x1 + 2
+
+In this example, the ANN model consists of 4 hidden layers, each with 10 neurons and using
+the tanh activation function. The training data set consists of Nr = 6000 points inside Ω
+and Nb = 2000 points on the boundary Γ1 ∪ Γ3 ∪ Γ4 ∪ Γ5 ∪ Γ6 . In addition, for the Tikhonov
+regularization term, Nk = 500 points are sampled on Γ2 .
+Gaussian noise is added to the data according to formula (5.1), with σ ∈ {0.01, 0.03, 0.05},
+corresponding to noise levels of 1%, 3% and 5%. Training is performed using the Algorithm
+1. The chosen regularization function is ∥∂u/∂n∥2L2 (Γ2 ) .
+The results are compared between ucomp α  (0.5, x2 , 1), the ANN solution, and the exact solution
+ exact
+u      (0.5, x2 , 1) at 600 evenly spaced points with x2 ∈ [0, 1]. The numerical results are
+reported in Figures 5, 6 and Table 5.
+
+                   Exact Solution                                                                 ANN Solution                                                                      Error
+
+
+
+
+                                                                      0.25                                                                                                                                                    0.03
+                                                                                                                                                  0.20
+                                                                      0.20                                                                                                                                                    0.02
+                                                                                                                                                  0.15
+                                                                      0.15                                                                                                                                                    0.01
+                                                                                                                                                  0.10
+                                                                  0.10                                                                                                                                                    0.00
+                                                                  0.05                                                                        0.05
+                                                                                                                                                                                                                         −0.01
+                                                                  0.00                                                                        0.00                                                                       −0.02
+ 0.0                                                            1.0          0.0                                                            1.0          0.0                                                            1.0
+       0.2                                                0.8                      0.2                                                0.8                      0.2                                                0.8
+             0.4                                    0.6                                  0.4                                    0.6                                  0.4                                    0.6
+             x1 0.6                           0.4                                        x1 0.6                           0.4                                        x1 0.6                           0.4
+                                                     x2                                                                          x2                                                                          x2
+                      0.8               0.2                                                       0.8               0.2                                                       0.8               0.2
+                            1.0   0.0                                                                   1.0   0.0                                                                   1.0   0.0
+
+
+
+
+Figure 5: Exact solution, ANN solution at x3 = 1, and error with 5% noise. The regulariza-
+tion parameter α = 0.004822 is chosen using the L-curve method.
+
+
+
+
+                                                                                                        15
+                         Exact vs. ANN Solution at x1 = 0.5, x3 = 1                                  Absolute Error at x1 = 0.5, x3 = 1
+                       0.20                                                                                                             1%
+                                                                                            0.035
+                                                                                                                                        5%
+                                                                                            0.030                                       5%
+                       0.15
+
+
+
+
+                                                                           Absolute Error
+                                                                                            0.025
+       u(0.5, x2, 1)
+                                                                                            0.020
+                       0.10
+                                                                                            0.015
+
+                       0.05                        Exact                                    0.010
+                                                   1%
+                                                   5%                                       0.005
+                       0.00                        5%
+                                                                                            0.000
+                              0.0      0.2   0.4        0.6    0.8   1.0                            0.0   0.2    0.4        0.6   0.8    1.0
+                                                   x2                                                                  x2
+
+Figure 6: Exact and ANN solutions at x2 = 0.5, x3 = 1. The regularization parameter
+α = 0.004822 is chosen using the L-curve method.
+
+                 Noise              Iteration Time/Iter    Loss      L2   L2 (x1 = 0.5, x3 = 1)
+                 1%                   1000      0.202   8.288e-04 0.00917        0.01027
+                 3%                   1000      0.205   2.835e-03 0.03643        0.02324
+                 5%                   1000      0.208   7.114e-03 0.05871        0.08705
+
+Table 5: The numerical result for the problem using the L-BFGS algorithm. The regular-
+ization parameter α = 0.004822 is chosen using the L-curve method.
+
+
+5.3    Nonlinear examples
+
+Let Ω ⊂ Rn be an open bounded set and Γ1 ⊂ ∂Ω a given manifold. Given the function
+q : R → R+ , we denote by P a second-order elliptic operator of the form
+
+                                                              P (u) = −∇ · (q(u)∇u),
+
+defined in Ω. The nonlinear elliptic Cauchy problem is formulated as follows (see [36]):
+                                  
+                                  
+                                       P u = h, in Ω,
+                                  
+                                          u = f, on Γ1 ,
+                                  q(u) ∂u = g, on Γ1 ,
+                                  
+                                  
+                                        ∂n
+where the Cauchy data f, g : Γ → R are given functions, and the right-hand side h : Ω → R
+is defined by
+                          h(x1 , x2 ) = −2ū(x1 , x2 )|∇ū(x1 , x2 )|2 .
+
+Example 5.6. 2D Cauchy problem in a parallelepiped. Let Ω = (0, 1) × (0, 1) ⊂ R2
+with boundary ∂Ω = Γ1 ∪ Γ2 ∪ Γ3 ∪ Γ4 , where
+
+                                    Γ1 := {(x1 , 0); x1 ∈ (0, 1)},             Γ2 := {(x1 , 0.5); x1 ∈ (0, 1)},
+
+                                Γ3 := {(0, x2 ); x2 ∈ (0, 0.5)},                      Γ4 := {(1, x2 ); x2 ∈ (0, 0.5)}.
+
+
+                                                                           16
+Set q(t) = 1 + t2 and the harmonic function ū : Ω̄ → R defined by
+
+                            ū(x1 , x2 ) := x21 − x22 + 5x1 − 2x2 − 3x1 x2 .
+
+The associated Cauchy problem is
+                          
+                          −∇ · (q(u)∇u) = h,
+                          
+                          
+                                                             in Ω,
+                                        u = f,               on Γ1 ,
+                          
+                          
+                          
+                                       ∂u
+                                 q(u)    = g,               on Γ1 ,
+                                       ∂n
+                          
+                          
+                          
+                          
+                                        u = ū,              on Γ3 ∪ Γ4 ,
+                          
+
+with the Cauchy data
+                                                     h                 2   i
+                   f (x1 ) = x21 + 5x1 ,   g(x1 ) = 1 +      x21 + 5x1          (3x1 − 2),
+
+and the right-hand side
+
+                              h(x1 , x2 ) = −2ū(x1 , x2 )|∇ū(x1 , x2 )|2 .
+
+In this example, the ANN model consists of 4 hidden layers, each with 10 neurons and using
+the tanh activation function. The training data set consists of Nr = 6000 points inside Ω and
+Nb = 2000 points on the boundary Γ1 , Γ3 ∪ Γ4 . In addition, for the Tikhonov regularization
+term, Nk = 600 points are sampled on Γ2 .
+Gaussian noise is added to the data according to formula (5.1), with σ ∈ {0.01, 0.03, 0.05},
+corresponding to noise levels of 1%, 3% and 5%. Training is performed using the Algorithm
+1. The chosen regularization function is ∥∂u/∂n∥2L2 (Γ2 ) .
+The results are compared between ucomp    α   (x1 , 0.5), the ANN solution, and the exact solution
+  exact
+u       (x1 , 0.5) at 600 evenly spaced points with x1 ∈ [0, 1]. The numerical results are reported
+in Figures 7, 8 and Table 6.
+
+
+
+
+Figure 7: The exact solution, ANN solution, and error in the case of 3% noise. The regular-
+ization parameter α = 0.001714 is chosen using the L-curve method.
+
+
+                                                   17
+Figure 8: Exact and ANN solutions at x2 = 0.5. The regularization parameter α = 0.001714
+is chosen using the L-curve method.
+
+              Noise     Iteration Time/Iter    Loss     L2   L2 (x2 = 0.5)
+              1%          1000      0.134   5.101e-03 0.0183     0.0375
+              3%          1000      0.138   1.829e-02 0.0341     0.0757
+              5%          1000      0.149   4.534e-02 0.0528     0.1182
+
+Table 6: Numerical results for the Cauchy problem using the L-BFGS algorithm. The
+regularization parameter α = 0.001714 is chosen using the L-curve method.
+
+Remark 5.7. The numerical results by the method suggested in this paper is better than
+those in [36].
+
+Example 5.8. The 2D Cauchy problem in a circle. Let Ω be a circle and Γ1 be the
+arcs of its boundary of lengths 3/4, 1/2, 1/4 as shown in Figure 9, with ∂Ω = Γ1 ∪ Γ2 and
+Γ1 ∩ Γ2 = ∅. Set q(t) = 1 + t2 and the harmonic function
+
+                              ū(x1 , x2 ) := ex2 sin(x1 ),   ū : Ω̄ → R.
+
+The associated Cauchy problem is
+                             
+                             
+                              −∇ · (q(u)∇u) = h, in Ω,
+                             
+                             
+                                            u = f, on Γ1 ,
+                             
+                                          ∂u
+                             
+                                     q(u)    = g, on Γ1 ,
+                                           ∂n
+with
+              f (x) = ex2 sin(x1 ),    g(x) = ∇ū · n = [ex2 cos(x1 ), ex2 sin(x1 )] · n,
+and
+                                                                 p
+   h(x1 , x2 ) = −2ū(x1 , x2 )|∇ū(x1 , x2 )|2 = −(ex2 sin(x1 )) (ex2 cos(x1 ))2 + (ex2 sin(x1 ))2 .
+
+
+                                                   18
+In this example, the ANN model consists of 5 hidden layers, each with 7 neurons and using
+the tanh activation function. The training data set consists of Nr = 5000 points inside Ω
+and Nb = 2000 points on the boundary Γ1 . In addition, for the Tikhonov regularization
+term, Nk = 500 points are sampled on Γ2 .
+Gaussian noise is added to the data according to formula (5.1), with σ = 0.05, corresponding
+to noise levels of 5%. Training is performed using the Algorithm 1. The chosen regularization
+function is ∥∂u/∂n∥2L2 (Γ2 ) .
+The results are compared between ucomp  α   (x1 , x2 ), the ANN solution, and the exact solution
+ exact
+u      (x1 , x2 ) at 500 evenly spaced points with x = (x1 , x2 ) ∈ Ω. The numerical results are
+reported in Figures 9, Table 7.
+
+
+
+
+Figure 9: Data, exact solution, ANN solution, and error in the case of 5% noise, Γ1 is of
+lengths 3/4 of ∂Ω. The regularization parameter α = 0.00408 is chosen using the discrepancy
+principle.
+We now present the numerical performance of the method when Γ1 is expanded from 43 to 14
+of the boundary ∂Ω, together with the error analysis in the presence of 5% noise.
+
+
+
+
+                                              19
+             Case                                Iteration Time/Iter    Loss     L2
+             Boundary Γ1 length 3/4                1000      0.128   2.184e-03 0.0421
+             Boundary Γ1 length 1/2                1000      0.129   3.137e-03 0.0753
+             Boundary Γ1 length 1/4                1000      0.127   3.971e-03 0.8912
+
+Table 7: Numerical results for the problem using the L-BFGS algorithm. The regularization
+parameter α = 0.00408 is chosen using the discrepancy principle.
+We observe that the numerical results for the case when the Cauchy data given in a 3/4-circle
+are quite accurate, while those for the 1/2-circle case show increasing errors at the endpoints
+of Γ2 , though they remain acceptable. However, the results for the 1/4-circle do not yield
+good outcomes.
+Now we consider the Cauchy problem for 3D nonlinear elliptic equations. Let Ω ⊂ R3 be a
+cuboid, defined as
+                      Ω := {(x1 , x2 , x3 ) ∈ (0, a) × (0, b) × (0, c)}.
+Consider the nonlinear equation in Ω:
+
+    ux1 x1 + ux2 x2 + ux3 x3 (x1 , x2 , x3 ) + L[u(x1 , x2 , x3 )] = S(x1 , x2 , x3 ) + N [u(x1 , x2 , x3 )],   (5.7)
+
+where L is a first-order linear operator and N is a first-order nonlinear operator.
+Define the subsets of the boundary ∂Ω:
+
+     Γ1 := {x|0 ≤ x1 ≤ a, 0 ≤ x2 ≤ b, x3 = 0},                 Γ2 := {x|0 ≤ x1 ≤ a, 0 ≤ x2 ≤ b, x3 = c},
+     Γ3 := {x|x1 = 0, 0 ≤ x2 ≤ b, 0 ≤ x3 ≤ c},                 Γ4 := {x|x1 = a, 0 ≤ x2 ≤ b, 0 ≤ x3 ≤ c},
+     Γ5 := {x|0 ≤ x1 ≤ a, x2 = 0, 0 ≤ x3 ≤ c},                 Γ6 := {x|0 ≤ x1 ≤ a, x2 = b, 0 ≤ x3 ≤ c}.
+
+The Cauchy data are given as
+                  
+                    u(x , x , 0) = f,          x ∈ Γ1 ,
+                   1 2
+                  
+                  
+                     ∂u(x1 , x2 , 0)
+                                     = ∇u · n, x ∈ Γ1 ,                                                         (5.8)
+                  
+                        ∂n
+                    u = ū,                    x ∈ Γ3 ∪ Γ4 ∪ Γ5 ∪ Γ6 .
+                  
+
+Find u satisfying (5.7)–(5.8) constitutes a Cauchy problem for the nonlinear 3D equation.
+The missing data on Γ2 can be recovered from the specified Cauchy data on Γ1 and Γ3 ∪
+Γ4 ∪ Γ5 ∪ Γ6 .
+
+
+
+
+                                                         20
+Example 5.9. 3D nonlinear Cauchy problem in a cuboid. Let Ω = [0, 1]3 ⊂ R3 .
+Define the boundary subsets:
+     Γ1 := {x|0 ≤ x1 ≤ 1, 0 ≤ x2 ≤ 1, x3 = 0},            Γ2 := {x|0 ≤ x1 ≤ 1, 0 ≤ x2 ≤ 1, x3 = 1},
+     Γ3 := {x|x1 = 0, 0 ≤ x2 ≤ 1, 0 ≤ x3 ≤ 1},            Γ4 := {x|x1 = 1, 0 ≤ x2 ≤ 1, 0 ≤ x3 ≤ 1},
+     Γ5 := {x|0 ≤ x1 ≤ 1, x2 = 0, 0 ≤ x3 ≤ 1},            Γ6 := {x|0 ≤ x1 ≤ 1, x2 = 1, 0 ≤ x3 ≤ 1}.
+The Cauchy problem is:
+                    ux1 x1 + ux2 x2 + ux3 x3 + L[u] = S(x1 , x2 , x3 ) + N [u],     x ∈ Ω,                (5.9)
+with the Cauchy data
+                                              2
+               
+               u(x1 , x2 , 0) = −3(x2 − x2 + sin(2πx2 )) ,
+               
+                                                                                  x ∈ Γ1 ,
+                                             x1 + 8
+               
+               
+               
+               
+                ∂u
+                       −4(x     −  x 2 + sin(2πx ))
+                               2      2           2
+                ∂n =
+               
+                                                    ,                            x ∈ Γ1 ,
+                                    x1 + 8
+               
+                                  1                                                                      (5.10)
+                u(0, x2 , x3 ) = (x2 − x22 + sin(2πx2 ))(x23 + 4x3 − 3),          x ∈ Γ3 ,
+                                  8
+               
+               
+               
+                                 1
+                u(1, x2 , x3 ) = (x2 − x22 + sin(2πx2 ))(x23 + 4x3 − 3),
+               
+               
+                                                                                 x ∈ Γ4 ,
+                                  9
+               
+               
+               
+               
+               u(x , 0, x ) = u(x , 1, x ) = 0,
+                      1     3        1     3                                      x ∈ Γ5 ∪ Γ6 .
+
+The exact solution is
+                         (x2 − x22 + sin(2πx2 ))(x23 + 4x3 − 3)
+      u(x1 , x2 , x3 ) =                                        ,       L = −2u,         N = eu + u2 ,
+                                         x1 + 8
+and S(x1 , x2 , x3 ) is computed by substituting u into (5.9).
+
+In this example, the ANN model consists of 5 hidden layers, each with 10 neurons and using
+the tanh activation function. The training data set consists of Nr = 6000 points inside Ω
+and Nb = 2000 points on the boundary Γ1 ∪ Γ3 ∪ Γ4 ∪ Γ5 ∪ Γ6 . In addition, for the Tikhonov
+regularization term, Nk = 600 points are sampled on Γ2 .
+Gaussian noise is added to the data according to formula (5.1), with σ ∈ {0.01, 0.03, 0.05},
+corresponding to noise levels of 1%, 3% and 5%. Training is performed using the Algorithm
+1. The chosen regularization function is ∥∂u/∂n∥2L2 (Γ2 ) .
+The results are compared between ucomp α  (0.5, x2 , 1), the ANN solution, and the exact solution
+ exact
+u      (0.5, x2 , 1) at 600 evenly spaced points with x2 ∈ [0, 1]. The numerical results are
+reported in Figures 10, 11 and Table 8.
+
+
+
+
+Figure 10: Exact solution, ANN solution at x3 = 1, and error in the case of 3% noise. The
+regularization parameter α = 0.003225 is chosen using the L-curve method. The chosen
+regularization function is ∥∂u/∂n∥2L2 (Γ2 ) .
+
+                                                     21
+Figure 11: Exact and ANN solutions at x1 = 0.5, x3 = 1. The regularization parameter
+α = 0.003225 is chosen using the L-curve method. The chosen regularization function is
+∥∂u/∂n∥2L2 (Γ2 ) .
+
+          Noise      Iteration Time/Iter    Loss      L2   L2 (x1 = 0.5, x3 = 1)
+          1%           1000      0.291   6.163e-03 0.01693        0.03443
+          3%           1000      0.294   2.193e-02 0.03680        0.05253
+          5%           1000      0.298   5.890e-02 0.05260        0.06975
+
+Table 8: Numerical results for the 3D nonlinear Cauchy problem using the L-BFGS algo-
+rithm. The regularization parameter α = 0.003225 is chosen using the L-curve method.
+
+Example 5.10. 3D nonlinear Cauchy problem in a cuboid, alternative case. Let
+Ω = [0, 1]3 ⊂ R3 and define the boundary subsets:
+     Γ1 := {x|0 ≤ x1 ≤ 1, 0 ≤ x2 ≤ 1, x3 = 0},                Γ2 := {x|0 ≤ x1 ≤ 1, 0 ≤ x2 ≤ 1, x3 = 1},
+     Γ3 := {x|x1 = 0, 0 ≤ x2 ≤ 1, 0 ≤ x3 ≤ 1},                Γ4 := {x|x1 = 1, 0 ≤ x2 ≤ 1, 0 ≤ x3 ≤ 1},
+     Γ5 := {x|0 ≤ x1 ≤ 1, x2 = 0, 0 ≤ x3 ≤ 1},                Γ6 := {x|0 ≤ x1 ≤ 1, x2 = 1, 0 ≤ x3 ≤ 1}.
+
+Consider the Cauchy problem:
+     ux1 x1 + ux2 x2 + ux3 x3 + L[u(x1 , x2 , x3 )] = S(x1 , x2 , x3 ) + N [u(x1 , x2 , x3 )],   x ∈ Ω,   (5.11)
+with the Cauchy data:
+                                      
+                                      
+                                      
+                                      u(x1 , x2 , 0) = x21 x32 ,      x ∈ Γ1 ,
+                                       ∂u(x1 , x2 , 0) = −x2 x3 ,
+                                      
+                                      
+                                                                       x ∈ Γ1 ,
+                                      
+                                                                1 2
+                                      
+                                      
+                                            ∂n
+                                                                       x ∈ Γ3 ,
+                                      
+                                       u(0, x2 , x3 ) = 0,                                                (5.12)
+                                      
+                                      
+                                      
+                                      u(1, x2 , x3 ) = x33 ex3 ,      x ∈ Γ4 ,
+                                      
+                                       u(x1 , 0, x3 ) = 0,             x ∈ Γ5 ,
+                                      
+                                      
+                                      
+                                      
+                                      
+                                      u(x , 1, x ) = x2 ex3 ,
+                                      
+                                                                       x ∈ Γ6 .
+                                           1       3      1
+
+
+The exact solution is
+              u(x1 , x2 , x3 ) = x21 x32 ex3 ,   L = 10u,      N = u2x1 + u2x2 + u4 − 10uux1 ,
+and S(x1 , x2 , x3 ) is computed by substituting the exact solution into (5.11).
+
+                                                         22
+In this example, the ANN model consists of 4 hidden layers, each with 10 neurons and using
+the tanh activation function. The training data set consists of Nr = 6000 points inside Ω
+and Nb = 2000 points on the boundary Γ1 ∪ Γ3 ∪ Γ4 ∪ Γ5 ∪ Γ6 . In addition, for the Tikhonov
+regularization term, Nk = 600 points are sampled on Γ2 .
+Gaussian noise is added to the data according to formula (5.1), with σ ∈ {0.01, 0.03, 0.05},
+corresponding to noise levels of 1%, 3% and 5%. Training is performed using the Algorithm
+1. The chosen regularization function is ∥∂u/∂n∥2L2 (Γ2 ) .
+The results are compared between ucomp α  (0.5, x2 , 1), the ANN solution, and the exact solution
+ exact
+u      (0.5, x2 , 1) at 600 evenly spaced points with x2 ∈ [0, 1]. The numerical results are
+reported in Figures 12, 13 and Table 9.
+
+
+
+
+Figure 12: Exact solution, ANN solution at x3 = 1, and error for 3% noise. The regu-
+larization parameter α = 0.006391 is selected using the discrepancy principle. The chosen
+regularization function is ∥∂u/∂n∥2L2 (Γ2 ) .
+
+
+
+
+Figure 13: Exact and ANN solution at x1 = 0.5, x3 = 1. The regularization parameter is
+selected using the discrepancy principle.
+
+
+
+
+                                               23
+    Noise         α    Iteration Time/Iter    Loss      L2   L2 (x1 = 0.5, x3 = 1)
+    1%        0.000237   1000      0.311   7.253e-03 0.02138        0.04622
+    3%        0.004157   1000      0.315   1.952e-02 0.03162        0.07926
+    5%        0.006391   1000      0.318   6.157e-02 0.04015        0.10661
+
+Table 9: Numerical results using L-BFGS algorithm. The regularization parameter α is
+selected via the discrepancy principle.
+
+Example 5.11. 3D nonlinear Cauchy problem in a smaller cuboid. Let Ω =
+[0, 0.5]3 ⊂ R3 and define the boundary subsets:
+
+  Γ1 := {x|0 ≤ x1 ≤ 0.5, 0 ≤ x2 ≤ 0.5, x3 = 0},            Γ2 := {x|0 ≤ x1 ≤ 0.5, 0 ≤ x2 ≤ 0.5, x3 = 0.5},
+  Γ3 := {x|x1 = 0, 0 ≤ x2 ≤ 0.5, 0 ≤ x3 ≤ 0.5},            Γ4 := {x|x1 = 0.5, 0 ≤ x2 ≤ 0.5, 0 ≤ x3 ≤ 0.5},
+  Γ5 := {x|0 ≤ x1 ≤ 0.5, x2 = 0, 0 ≤ x3 ≤ 0.5},            Γ6 := {x|0 ≤ x1 ≤ 0.5, x2 = 0.5, 0 ≤ x3 ≤ 0.5}.
+
+The Cauchy problem is:
+
+     ux1 x1 + ux2 x2 + ux3 x3 + L[u(x1 , x2 , x3 )] = S(x1 , x2 , x3 ) + N [u(x1 , x2 , x3 )],   x ∈ Ω,   (5.13)
+
+with the Cauchy data:
+                                  
+                                  
+                                  
+                                  u(x1 , x2 , x3 ) = x1 +x1 2 +1 ,      x ∈ Γ1 ,
+                                    ∂u
+                                  
+                                  
+                                       = (x1 +x12 +1)2 ,                 x ∈ Γ1 ,
+                                  
+                                  
+                                  
+                                  
+                                  
+                                   ∂n
+                                   u(x1 , x2 , x3 ) = x2 +x1 3 +1 ,      x ∈ Γ3 ,
+                                  
+                                                                                                          (5.14)
+                                  
+                                  
+                                  
+                                  u(x1 , x2 , x3 ) = 0.5+x21+x3 +1 ,    x ∈ Γ4 ,
+                                  
+                                   u(x1 , x2 , x3 ) = x1 +x1 3 +1 ,      x ∈ Γ5 ,
+                                  
+                                  
+                                  
+                                  
+                                  
+                                                               1
+                                                                         x ∈ Γ6 .
+                                  
+                                  u(x , x , x ) =
+                                       1 2 3          x1 +0.5+x3 +1 ,
+
+
+The exact solution is
+                                       1
+          u(x1 , x2 , x3 ) =                    ,       L = 2u,      N = u2x1 + u2x2 + u2 − 2uux1 ,
+                               x1 + x2 + x3 + 1
+and S(x1 , x2 , x3 ) is computed by substituting the exact solution into (5.13).
+
+In this example, the ANN model consists of 5 hidden layers, each with 10 neurons and using
+the tanh activation function. The training data set consists of Nr = 6000 points inside Ω
+and Nb = 2000 points on the boundary Γ1 ∪ Γ3 ∪ Γ4 ∪ Γ5 ∪ Γ6 . In addition, for the Tikhonov
+regularization term, Nk = 600 points are sampled on Γ2 .
+Gaussian noise is added to the data according to formula (5.1), with σ ∈ {0.01, 0.03, 0.05, 0.07},
+corresponding to noise levels of 1%, 3%, 5% and 7%. Training is performed using the Algo-
+rithm 1. The chosen regularization function is ∥∂u/∂n∥2L2 (Γ2 ) .
+The results are compared between ucomp    α   (x1 , 0.25, 0.5), the ANN solution, and the exact
+solution uexact (x1 , 0.25, 0.5) at 600 evenly spaced points with x1 ∈ [0, 0.5]. The numerical
+results are reported in Figures 14, 15, 16 and Table 10.
+
+
+
+                                                         24
+Figure 14: Left: Loss function during training. Right: The regularization parameter α =
+0.001683 is chosen using the L-curve method.
+
+
+
+
+Figure 15: Exact solution, ANN solution at x3 = 0.5, and error for 5% noise. The regulariza-
+tion parameter α = 0.001683 is chosen using the L-curve method. The chosen regularization
+function is ∥∂u/∂n∥2L2 (Γ2 ) .
+
+
+
+
+Figure 16: Exact and ANN solutions at x2 = 0.25, x3 = 0.5. The regularization parameter
+α = 0.001683 is chosen using the L-curve method.
+
+                                            25
+        Noise   Iteration Time/Iter    Loss      L2   L2 (x2 = 0.25, x3 = 0.5)
+        1%        1000      0.261   4.437e-04 0.01332         0.00897
+        3%        1000      0.265   1.107e-03 0.02134         0.03537
+        5%        1000      0.267   2.227e-03 0.04232         0.06621
+        7%        1000      0.269   5.889e-03 0.09454         0.11361
+
+Table 10: Numerical results using L-BFGS algorithm. The regularization parameter α =
+0.001683 is chosen via the L-curve method.
+
+
+5.4    Numerical Results and Discussion
+
+The numerical experiments demonstrate that the proposed framework, which combines Ar-
+tificial Neural Networks with Tikhonov regularization, the selection of the regularization
+parameter α via the discrepancy principle or L-curve method, and optimization techniques
+using the L-BFGS algorithm, yields highly accurate and stable results across a variety of
+geometries and problem types (both linear and nonlinear) despite the presence of Gaussian
+noise. Below, we provide a detailed analysis of the numerical examples, highlighting the
+robustness and effectiveness of the method.
+2D Laplace Equation with Smooth Boundary Data (Example 5.1): For the case of
+a smooth boundary function, the L2 error at x2 = 1 is remarkably low, achieving 3.8 × 10−3
+with 1% noise (Table 1), and gracefully increases to 0.181 at 7.5% noise. The comparison
+between the exact and ANN solutions (Figure 1) shows near-perfect alignment, underscoring
+that a compact ANN model (3 hidden layers with 7 neurons, tanh activation) combined with
+Tikhonov regularization based on ∥∂n u∥2L2 (Γ2 ) is sufficient to produce high-quality boundary
+approximations for smooth data.
+2D Laplace Equation with Hat Function Boundary (Example 5.2): Despite reduced
+smoothness, the ANN effectively captures the characteristic shape of the hat function, with
+L2 errors at x2 = 1 of 0.02097 (1% noise) and 0.06349 (5% noise) (Table 2). The plots (Figure
+2) confirm that the peak of the hat function is well-preserved, demonstrating the method’s
+ability to maintain moderately non-smooth features under appropriate regularization.
+2D Laplace Equation with Step Function Boundary (Example 5.3): For the chal-
+lenging case where the boundary data does not belong to the Sobolev space H 1/2 , the ANN
+achieves L2 errors of 0.08979 (1% noise) and 0.15312 (5% noise) at x2 = 1 (Table 3). The
+step edges are reasonably reconstructed (Figure 3), indicating good performance given the
+irregular nature of the target data.
+2D Poisson Equation in a Circular Domain (Example 5.4): Across 1–5% noise levels,
+the global L2 error ranges from 0.0185 to 0.0512 (Table 4), with smooth error distributions
+(Figure 4). The flux-based regularization on Γ2 effectively stabilizes the Cauchy problem in
+curved geometries.
+3D Linear Poisson Equation (Example 5.5): In a cubic domain, the global L2 error
+with 1% noise is 0.00917, and 0.01027 on the slice x3 = 1, with controlled growth up to 5%
+noise (Table 5; Figures 5–6). This highlights the method’s scalability to 3D problems using
+a modest network (4 hidden layers, 10 neurons, tanh).
+2D Nonlinear Cauchy Problem (Example 5.6): Despite the nonlinear term q(u) and
+Cauchy data, the L2 error remains low, from 0.0183 (1% noise) to 0.0528 (5% noise) (Table 6),
+
+                                              26
+with the slice at x2 = 0.5 closely matching the exact solution (Figure 8). This emphasizes
+the advantage of combining regularization with L-curve/discrepancy-based α selection in
+nonlinear settings.
+Effect of Cauchy Data Length in a Circular Domain (Example 5.8): When Γ1
+spans 3/4 of the boundary, the L2 error is 0.0421; reducing to 1/2 increases the error to
+0.0753, and at 1/4, it rises sharply to 0.8912 (Table 7; Figure 9). These results align with
+the theoretical ill-posedness of the Cauchy problem: less Cauchy data exacerbates instability,
+yet the method yields reliable solutions for sufficiently large data portions (3/4 or 1/2).
+3D Nonlinear Cauchy Problems (Examples 5.9, 5.10, 5.11): Across 3D domains,
+including a smaller [0, 0.5]3 cube, the L2 errors range from 0.01693–0.05871 (Table 8) and
+0.02138–0.04015 (Table 9) for 1–5% noise. In the smaller domain (Example 5.11), errors re-
+main controlled, from 0.01332 to 0.09454 for 1–7% noise (Table 10). Error plots show devia-
+tions concentrated near boundaries with missing data, yet regularization prevents widespread
+error propagation, underscoring the algorithm’s robustness in 3D nonlinear contexts.
+Overall, the method attains high accuracy for smooth and moderately non-smooth data
+even with compact networks and moderate training sets; flux-based regularization on the
+unknown boundary, together with α selection via the discrepancy principle or the L-curve,
+is critical for suppressing noise and stabilizing the ill-posed Cauchy problem. For step-
+like data or when Cauchy data are limited (e.g., a quarter of the circle), errors increase
+as expected yet the solutions remain reasonable, confirming practical applicability. The
+approach also scales effectively to curved geometries, 3D, and nonlinear equations, with
+numerical solutions closely matching exact ones, demonstrating strong generalization. Taken
+together with the tables and figures, these results show that the proposed framework delivers
+highly accurate and stable solutions under moderate noise while accommodating diverse
+data types, boundary conditions, and geometries without requiring overly complex models
+or sophisticated optimization techniques.
+
+
+
+Conclusion
+We reformulated the Cauchy problem for multi-dimensional nonlinear elliptic equations as a
+least squares problem and then stabilized it by Tikhonov regularization method. We solved
+the regularized problem in the framework of artificial neural networks, while the regulariza-
+tion parameter is chosen by an a posteriori method or the L-curve method. The numerical
+results show that the approach is efficient for this severely ill-posed, multi-dimensional and
+nonlinear Cauchy problem. Furthermore, it is shown that without the regularization the
+method does not work. Thus, ANN alone do not have regularization effect as claimed in
+some previous works.
+
+
+
+Funding
+The research of Dinh Nho Hào was supported by the Vietnam Academy of Science and
+Technology, Grant QTRU06.01/24-26. The research of Maxim Shishlenin was supported by
+the Russian Science Foundation, Grant 24-41-04004, https://rscf.ru/project/24-41-04004.
+
+
+
+                                             27
+Conflict of interest
+The authors of this work declare that they have no conflicts of interest.
+
+
+
+References
+ [1] Colli-Franzone P. and Magenes E., On the inverse potential problem of electrocardiology.
+     Calcolo 16(1979), 459–538.
+
+ [2] Colli-Franzone P., Guerri L., Tentoni S., Viganotti C., Baruffi S., Spaggiari S. and
+     Taccardi B., A mathematical procedure for solving the inverse potential problem of
+     electrocardiography. Analysis of the time-space accuracy from in vitro experimental
+     data. Math. Biosci. 77(1985), 353–396.
+
+ [3] Glasko V.B., Mudretsova E.A., and Strakhov V.N., Inverse problems in the gravimetry
+     and magnetometry. In (Tikhonov A.N., A. V. Goncharskii A.V., Eds) Ill-Posed Problems
+     in the Natural Science, Moscow State University Press, 1987, 89–102. (Russian)
+
+ [4] Isakov V., Inverse Problems for Partial Differential Equations. 2nd Edn., Springer-
+     Verlag, Berlin, 2006.
+
+ [5] Lavrent’ev M.M., Romanov V.G., and Shishatskii G.P., Ill-posed Problems in Mathe-
+     matical Physics and Analysis. Amer. Math. Soc., Providence, R. I., 1986.
+
+ [6] Payne L., Improperly Posed Problems in Partial Differential Equations. SIAM, Philadel-
+     phia, 1975.
+
+ [7] Hadamard J., Lectures on Cauchy’s Problem in Linear Partial Differential Equations,
+     Yale Univ. Press, 1923.
+
+ [8] Hadamard J., Sur les problèmes aux derivées partielles et leur signification physique,
+     Bull. Univ. Princeton 1902(13), 49–32.
+
+ [9] Tikhonov A.N., On the stability of inverse problems. C. R. (Doklady) Acad. Sci. URSS
+     (N.S.) 39(1943), 176–179. (Russian)
+
+[10] Tikhonov A.N., On the solution of ill-posed problems and the method of regularization,
+     Dokl. Akad. Nauk SSSR 151(1963), 501–504. (Russian)
+
+[11] Tikhonov A.N. and Arsenin V.Y. (1977), Solution of Ill-posed Problems, Wiley, New
+     York, 1977.
+
+[12] Kabanikhin S.I., Inverse and Ill-Posed Problems. Theory and Applications. Walter de
+     Gruyter GmbH & Co. KG, Berlin, 2012.
+
+[13] Landis E.M., Certain properties of equations of elliptic type, Dokl. Akad. Nauk SSSR
+     107(1956), 640–643. (Russian)
+
+[14] Lavrent’ev M.M., On Cauchy’s problem for Laplace’s equation Dokl. Akad. Nauk SSSR
+     (N.S.) 102(1955), 205–206. (Russian)
+
+
+
+                                             28
+[15] Lavrent’ev M.M., On the Cauchy problem for Laplace equation, Izv. Akad. Nauk SSSR.
+     Ser. Mat. 120(1956), 819–842. (Russian)
+
+[16] Lavrent’ev M.M., On the Cauchy problem for linear elliptic of second order, Dokl. Akad.
+     Nauk SSSR 112(1957), 195–197. (Russian)
+
+[17] Lavrent’ev M.M., Some Improperly Posed Problems in Mathematical Physics, Springer,
+     New York 1967.
+
+[18] Pucci C., Sui problemi di Cauchy non ”ben posti”, Rend. Accad. Naz. Lincei 8
+     (18)(1955), 473–477.
+
+[19] Pucci C., Discussione del problema di Cauchy per le equazioni di tipo ellittico, Ann.
+     Mat. Pura Appl. 46(1958), 131–153.
+
+[20] Pucci C., Some topics in parabolic and elliptic equations, Lecture Series No. 36, Institute
+     for Fluid Mechanics and Applied Mathematics, University of Maryland, 1958.
+
+[21] Alessandrini G., Rondi L., Rosset E. and Vessella S., The stability for the Cauchy
+     problem for elliptic equations. Inverse Problems 25(2009), 123004.
+
+[22] Dinh Nho Hào, Tran Duc Van, and Gorenflo R., Towards the Cauchy problem for the
+     Laplace equation. Banach Center Publications 27(1992), 111–128.
+
+[23] Kabanikhin S.I., Gasimov Y.S., Nurseitov D.B., Shishlenin M.A., Sholpanbaev B.B.,
+     Kasenov S. Regularization of the continuation problem for elliptic equations. Journal
+     of Inverse and Ill-Posed Problems, 21(2013), 871–884.
+
+[24] Kabanikhin S.I., Shishlenin M.A. Regularization of the decision prolongation problem
+     for parabolic and elliptic equations from border part. Eurasian Journal of Mathematical
+     and Computer Applications, 2(2014), 81–91.
+
+[25] Botchev M.A., Kabanikhin S.I., Shishlenin M.A., Tyrtyshnikov E.E. The Cauchy prob-
+     lem for the 3D Poisson equation: Landweber iteration vs. horizontally diagonalize and
+     fit method. Journal of Inverse and Ill-Posed Problems 31(2023), 203–221.
+
+[26] Conlan J. and Trytten G.N., Pointwise bounds in the Cauchy problem for elliptic sys-
+     tems of partial differential equations. Arch. Rational Mech. Anal. 22(1966), 143–152.
+
+[27] Payne L.E. and Sather D., On some improperly posed problems for quasilinear equations
+     of mixed type. Trans. Amer. Math. Soc. 128(1967), 135–141.
+
+[28] Schaefer P.W., On the Cauchy problem for an elliptic system. Arch. Rational Mech.
+     Anal. 20(1965), 391–412.
+
+[29] Schaefer P.W., Pointwise bounds in the Cauchy problem for an elliptic system. SIAM
+     J. Appl. Math. 15(1967), 665–677.
+
+[30] Schaefer P.W., Bounds in the Cauchy problem for a fourth order quasi-linear equation.
+     SIAM J. Appl. Math. 21(1971), 44–50.
+
+[31] Schaefer P.W., On the Cauchy problem for the nonlinear biharmonic equation. J. Math.
+     Anal. Appl. 36(1971), 660–673.
+
+
+                                              29
+[32] Schaefer P.W., Improvable estimates in some non-well-posed problems for a system of
+     elliptic equations. SIAM J. Math. Anal. 4(1973), 447–455.
+
+[33] Schaefer P.W., On uniqueness, stability and pointwise estimates in the Cauchy problem
+     for coupled elliptic equations. Quart. Appl. Math. 31(1973), 321–328.
+
+[34] Schaefer P.W., A priori bounds in the Cauchy problem for coupled elliptic systems.
+     Applicable Anal. 4(1974), 207–221.
+
+[35] Trytten G.N., Pointwise bounds for solutions of the Cauchy problem for elliptic equa-
+     tions. Arch. Rational Mech. Anal. 13(1963), 222–244.
+
+[36] Kügler P. and Leitão A., Mean value iterations for nonlinear elliptic Cauchy problems.
+     Numer. Math. 96(2003), 269–293.
+
+[37] Egger H. and Leitao A., Efficient reconstruction methods for nonlinear elliptic Cauchy
+     problems with piecewise constant solutions. Adv. Appl. Math. Mech. 1(2009), 729—749.
+
+[38] Ly I., An iterative method for solving Cauchy problems for the p-Laplace operator.
+     Complex Var. Elliptic Equ. 55(2010), 1079–1088.
+
+[39] Ly I. and Tarkhanov N., The Cauchy problem for nonlinear elliptic equations. Nonlinear
+     Anal. 70(2009), 2494—2505.
+
+[40] Ly I. and Tarkhanov N., A variational approach to the Cauchy problem for nonlinear
+     elliptic differential equations. J. Inverse Ill-Posed Probl. 17(2009), 595–610.
+
+[41] Kallel M., Moakher M. and Theljani A., The Cauchy problem for a nonlinear elliptic
+     equation: Nash-game approach and application to image inpainting. Inverse Probl.
+     Imaging 9(2015), 853—874.
+
+[42] Andrieux S. and Baranger T.N., Nonlinear Cauchy problem and identification in con-
+     tact mechanics: a solving method based on Bregman-gap. Inverse Problems 36(2020),
+     115012.
+
+[43] Li Y., Hu X., Artificial neural network approximations of Cauchy inverse problem for
+     linear PDEs, Applied Mathematics and Computation, Volume 414(2022), 126678.
+
+[44] Liu D.C., Nocedal J., On the limited memory BFGS method for large scale optimization,
+     Mathematical Programming 45(1989), 503–528.
+
+[45] Hansen P.C., 1992, The L-curve and its use in the numerical treatment of inverse prob-
+     lems, https://www.sintef.no/globalassets/project/evitameeting/2005/lcurve.pdf
+
+
+
+
+                                             30
+
