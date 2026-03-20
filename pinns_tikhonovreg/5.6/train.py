@@ -80,7 +80,7 @@ def run_example_56(
         "regularization": 1.0,
     }
 
-    alphas = np.logspace(-4, -2, 10)
+    alphas = np.logspace(-4, -1, 20)
 
     # -----------------------------------------------------------------------
     # Alpha selection
