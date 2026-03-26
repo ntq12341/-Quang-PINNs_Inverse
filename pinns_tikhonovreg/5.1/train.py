@@ -11,7 +11,7 @@ from data_generate import (
     generate_inverse_data,
     u_exact,
 )
-from network import PINN, l_curve_method, train_lbfgs
+from network import PINN, discrepancy_principle, l_curve_method, train_lbfgs
 from perform_evaluate import export_error_tables
 from visual import plot_surface_comparison, plot_top_boundary_comparison
 
@@ -36,12 +36,20 @@ def run_example_51(
     forward_iter=800,
     lcurve_iter=200,
     inverse_iter=1000,
+    alpha_method="discrepancy",
+    tau=1.1,
 ):
-    """Run Example 5.1 from Hao-Shishlenin-Cong (2025)."""
+    """Run Example 5.1 from Hao-Shishlenin-Cong (2025).
+
+    Sửa so với bản gốc:
+      - alpha_method="discrepancy" (Table 1 dùng discrepancy principle)
+      - alphas mở rộng để bao phủ vùng bài báo (0.007-0.08)
+      - seed được reset từ run_example_51_suite trước mỗi lần gọi
+    """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    print(f"\n=== Example 5.1 | noise={noise_level * 100:.1f}% | device={device} ===\n")
+    print(f"\n=== Example 5.1 | noise={noise_level * 100:.1f}% | method={alpha_method} | device={device} ===\n")
 
     print("Step 1/3: solve the forward problem to generate bottom boundary data...")
     model_forward = PINN().to(device)
@@ -66,17 +74,33 @@ def run_example_51(
         N_reg=500,
     )
 
-    print("Step 3/3: solve inverse problem with L-curve alpha selection...")
-    alphas = np.logspace(-5, -1, 10)
+    print("Step 3/3: solve inverse problem with alpha selection...")
+    # Alpha range bao phủ vùng bài báo [0.001, 0.5], 15 điểm log-đều
+    alphas = np.logspace(-3, -0.3, 15)
+
     model_for_alpha = PINN().to(device)
-    optimal_alpha, l_curve_results = l_curve_method(
-        model_for_alpha,
-        data_inverse,
-        alphas,
-        max_iter=lcurve_iter,
-        device=device,
-    )
-    print(f"Selected alpha (L-curve): {optimal_alpha:.6e}")
+
+    if alpha_method == "discrepancy":
+        optimal_alpha = discrepancy_principle(
+            model_for_alpha,
+            data_inverse,
+            noise_level=noise_level,
+            alphas=alphas,
+            tau=tau,
+            max_iter=lcurve_iter,
+            device=device,
+        )
+        l_curve_results = None
+    else:
+        optimal_alpha, l_curve_results = l_curve_method(
+            model_for_alpha,
+            data_inverse,
+            alphas,
+            max_iter=lcurve_iter,
+            device=device,
+        )
+
+    print(f"Selected alpha ({alpha_method}): {optimal_alpha:.6e}")
 
     model_final = PINN().to(device)
     losses = train_lbfgs(
@@ -124,6 +148,9 @@ def run_example_51_suite(
     forward_iter=800,
     lcurve_iter=200,
     inverse_iter=1000,
+    alpha_method="discrepancy",  # FIX: dùng discrepancy như bài báo
+    tau=1.1,
+    seed=42,                     # FIX: seed tập trung
     figs_dir=None,
     tables_dir=None,
 ):
@@ -139,12 +166,20 @@ def run_example_51_suite(
 
     all_results = {}
     for noise in noise_levels:
+        # FIX: Reset seed trước mỗi noise level — kết quả không phụ thuộc thứ tự chạy
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+
         result = run_example_51(
             noise_level=noise,
             device=device,
             forward_iter=forward_iter,
             lcurve_iter=lcurve_iter,
             inverse_iter=inverse_iter,
+            alpha_method=alpha_method,
+            tau=tau,
         )
         all_results[noise] = result
 

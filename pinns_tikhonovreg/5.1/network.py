@@ -9,7 +9,7 @@ from data_generate import X1_MIN, X1_MAX, X2_MIN, X2_MAX
 class PINN(nn.Module):
     """Physics-Informed Neural Network for Laplace Cauchy problem."""
 
-    def __init__(self, layers=None):
+    def __init__(self, layers=None, alpha = 0):
         super().__init__()
         if layers is None:
             layers = [2, 7, 7, 7, 1]
@@ -162,6 +162,50 @@ def train_lbfgs(model, data, alpha=0.0, max_iter=1000, device="cpu", print_every
             print(f"Iter ~{step_index:4d} | loss = {history[-1]:.6e}")
 
     return history
+
+
+def discrepancy_principle(
+    model,
+    data,
+    noise_level,
+    alphas,
+    tau=1.1,
+    max_iter=200,
+    device="cpu",
+):
+    """
+    Discrepancy principle cho Example 5.1 (bài báo Section 4, Table 1).
+
+    Chọn alpha nhỏ nhất sao cho cauchy_loss >= tau * noise_level^2 * N_cauchy,
+    tức là scan alpha từ NHỎ đến LỚN và dừng lại khi cauchy_loss vượt threshold.
+    """
+    # Threshold theo MSE scale: so sánh sqrt(cauchy_loss) với tau * noise_level
+    # Tương đương: cauchy_loss <= (tau * noise_level)^2
+    threshold = (tau * noise_level) ** 2
+
+    print(f"  Discrepancy principle: target cauchy_loss <= {threshold:.4e}  "
+          f"(tau={tau}, noise={noise_level:.4f})")
+
+    chosen_alpha = sorted(alphas)[0]   # fallback: alpha nhỏ nhất
+
+    # Scan từ alpha NHỎ đến LỚN, lấy alpha lớn nhất vẫn thỏa điều kiện
+    for alpha in sorted(alphas):
+        model_copy = copy.deepcopy(model).to(device)
+        train_lbfgs(model_copy, data, alpha=alpha, max_iter=max_iter,
+                    device=device, print_every=0)
+
+        _, components = compute_loss(model_copy, data, alpha=alpha, device=device)
+        cauchy_loss = components.get("cauchy", 0.0)
+
+        print(f"  alpha={alpha:.3e} | cauchy_loss={cauchy_loss:.4e} | threshold={threshold:.4e}")
+
+        if cauchy_loss <= threshold:
+            chosen_alpha = alpha          # còn trong ngưỡng -> cập nhật
+        else:
+            break                         # vượt ngưỡng -> dừng, giữ lần trước
+
+    print(f"  => Selected alpha (discrepancy): {chosen_alpha:.6e}")
+    return chosen_alpha
 
 
 def l_curve_method(
