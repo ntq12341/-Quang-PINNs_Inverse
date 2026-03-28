@@ -1,0 +1,1764 @@
+Journal of Computational Physics 473 (2023) 111731
+
+Contents lists available at ScienceDirect
+
+Journal of Computational Physics
+journal homepage: www.elsevier.com/locate/jcp
+
+Optimal control of PDEs using physics-informed neural
+networks
+Saviz Mowlavi a,b , Saleh Nabi b,∗
+a
+b
+
+Department of Mechanical Engineering, Massachusetts Institute of Technology, Cambridge, MA 02139, USA
+Mitsubishi Electric Research Laboratories, Cambridge, MA 02139, USA
+
+a r t i c l e
+
+i n f o
+
+Article history:
+Received 30 November 2021
+Received in revised form 10 October 2022
+Accepted 24 October 2022
+Available online 7 November 2022
+Keywords:
+Optimal control
+Physics-informed neural networks
+Adjoint-based optimization
+PDE-constrained optimization
+
+a b s t r a c t
+Physics-informed neural networks (PINNs) have recently become a popular method for
+solving forward and inverse problems governed by partial differential equations (PDEs).
+By incorporating the residual of the PDE into the loss function of a neural network-based
+surrogate model for the unknown state, PINNs can seamlessly blend measurement data
+with physical constraints. Here, we extend this framework to PDE-constrained optimal
+control problems, for which the governing PDE is fully known and the goal is to ﬁnd a
+control variable that minimizes a desired cost objective. We provide a set of guidelines
+for obtaining a good optimal control solution; ﬁrst by selecting an appropriate PINN
+architecture and training parameters based on a forward problem, second by choosing the
+best value for a critical scalar weight in the loss function using a simple but effective twostep line search strategy. We then validate the performance of the PINN framework by
+comparing it to adjoint-based nonlinear optimal control, which performs gradient descent
+on the discretized control variable while satisfying the discretized PDE. This comparison
+is carried out on several distributed control examples based on the Laplace, Burgers,
+Kuramoto-Sivashinsky, and Navier-Stokes equations. Finally, we discuss the advantages
+and caveats of using the PINN and adjoint-based approaches for solving optimal control
+problems constrained by nonlinear PDEs.
+© 2022 Elsevier Inc. All rights reserved.
+
+1. Introduction
+Owing to increases in computational power and wealth of available data as well as advances in algorithms, machine
+learning and deep learning speciﬁcally have revolutionized a number of ﬁelds over the last decade [1] – image and speech
+recognition [2,3], natural language processing [4], and drug discovery [5] are just a few examples. In the physical sciences,
+however, data is more scarce while physical models are often available in the form of partial differential equations (PDEs)
+[6]. Leveraging these governing equations, physics-informed neural networks (PINNs) were recently proposed in [7] as a
+deep learning framework for solving forward and inverse problems without requiring much data (or not at all, in the case
+of forward problems). Building on a line of research that originated in the nineties [8–11] and is rooted in the universal
+approximation theorem for neural networks [12,13], the basic idea behind PINNs is to approximate the solution to a given
+problem with a feed-forward neural network. This neural network is then trained by minimizing a composite loss function
+that not only penalizes the prediction error with respect to the available data but also enforces the governing equations
+
+* Corresponding author.
+
+E-mail address: nabi@merl.com (S. Nabi).
+
+https://doi.org/10.1016/j.jcp.2022.111731
+0021-9991/© 2022 Elsevier Inc. All rights reserved.
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+and boundary conditions – in effect, the governing equations act as an implicit prior that regularizes the training procedure
+in the data-limited regime. A great beneﬁt of PINNs is their ﬂexibility: they can either solve forward problems in the
+absence of any data when the governing equations are fully known, or leverage available data to solve inverse problems
+involving unknown model parameters or physical quantities (for reviews on PINNs, see [14] and [15]). PINNs have since
+found applications in numerous ﬁelds such as ﬂuid mechanics [16–18], heat transfer [15], solid mechanics [19,20], medicine
+[21,22], and chemistry [23], and they have been extended to account for noisy data [24] as well as various types of governing
+equations such as stochastic PDEs [25] and fractional PDEs [26].
+In this paper, we investigate the potential of PINNs to solve PDE-constrained optimal control problems, for which the
+governing PDEs are fully known and the goal is to ﬁnd a control variable that minimizes a desired cost objective. Such
+problems arise in a variety of ﬁelds including ﬂuid mechanics [27], transition to turbulence [28], heat transfer [29], electromagnetism [30], topology optimization [31], and mesh reﬁnement [32]. The control variable to optimize might represent
+a distributed boundary actuation, an external body force or an initial condition of the system [33,34]. The highly nonlinear and multi-scale nature of such problems requires sophisticated numerical tools to determine control inputs that yield
+optimal performance according to application-speciﬁc criteria. Optimal control problems are usually solved by combining
+gradient-descent algorithms with adjoint-based sensitivity analysis, which computes the gradient of the cost objective function with respect to the control variable using only two PDE simulations [35]. This adjoint-based optimization framework is
+therefore very eﬃcient when the control is a space- and/or time-dependent ﬁeld, but its complexity has limited its adoption
+by the engineering community. By contrast, a major strength of PINNs is their ease of implementation, and we show here
+that the PINN framework can be readily extended to the optimal control setting by approximating the control ﬁeld with
+its own neural network in addition to the neural network for the unknown state variable. These two networks are then
+simultaneously trained using a composite loss function that includes the cost objective functional in addition to the PDE
+residual and initial/boundary conditions. In this way, the training process ﬁnds a control and a state that satisfy the PDE
+constraint while minimizing the cost objective. A similar approach was recently proposed by [36] and [37] in the context
+of inverse design and parametric optimal control, respectively. In light of these recent works, the novelties of the present
+study are two-fold:
+1. We propose a set of guidelines consisting of two parts for obtaining a good optimal control solution using the PINN
+framework. First, we select an appropriate neural network architecture and training parameters by solving a forward
+problem based on the same PDE. Second, we solve the optimal control problem using a simple but effective line search
+strategy to ﬁnd the best value for the scalar weight of the cost objective functional inside the loss function, which is a
+critical parameter to obtain a feasible optimal solution that simultaneously satisﬁes the PDE constraint while minimizing
+the cost objective. Speciﬁcally, we ﬁnd the best scalar weight by evaluating the cost objective corresponding to the PINN
+optimal control using a separate PINN forward computation that takes the PINN optimal control as input.
+2. We apply these guidelines to solving a range of optimal control problems based on the Laplace, Burgers, KuramotoSivashinsky, and Navier-Stokes equations using the PINN framework. In each case, we compare the quality of the optimal
+control found by PINNs with corresponding results obtained from adjoint-based optimization, which we implement on
+all examples. Finally, we leverage our experience from this comparative study to discuss the pros and cons of the PINNand adjoint-based approaches for solving PDE-constrained optimal control problems. Such a careful and systematic
+comparison of the two methods enables researchers to better evaluate and position PINN-based optimal control within
+the larger context of PDE-constrained optimization.
+This paper is structured as follows. The methodology and guidelines for solving optimal control problems with PINNs are
+presented in Section 2, along with a review of the classical adjoint-based optimization framework. The PINNs and adjointbased approaches are then applied to a range of optimal control problems in Section 3, following which their pros and cons
+are discussed in Section 4. Conclusions close the paper in Section 5.
+2. Methodology
+2.1. Optimal control problem statement
+Consider a physical system deﬁned over a domain  ⊂ Rd , and governed by a PDE of the form
+
+F [u(x, t ); c v (x, t )] = 0,
+
+x ∈ , t ∈ [0, T ],
+
+(1a)
+
+B[u(x, t ); cb (x, t )] = 0,
+
+x ∈ ∂ , t ∈ [0, T ],
+
+(1b)
+
+x ∈ ,
+
+(1c)
+
+I [u(x, 0); c0 (x)] = 0,
+
+where x and t denote respectively space and time, u ∈ U is the state vector, c v , cb and c0 are respectively volume, boundary
+and initial control vectors, F is the PDE residual which contains several differential operators, B are the boundary conditions, and I is the initial condition. The solution of the PDE (1) depends on the control variable c = (c v , cb , c0 ) ∈ C . U and
+C are appropriate Hilbert spaces. For the discretized solution of PDEs, we assume such spaces to be, respectively, Euclidean
+2
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+spaces Rn and R p . In PDE-constrained optimal control, we seek the optimal c∗ that minimizes a user-deﬁned cost objective
+functional J (u, c). This constrained optimization problem can be formulated as
+
+c∗ = arg min J (u, c)
+
+subject to (1).
+
+c
+
+(2)
+
+A trivial approach to solve the above optimization problem is to calculate solutions of (1) for a number of different control
+variables c, and pick the one that leads to the lowest value of J . However, when c is a continuous ﬁeld deﬁned over a
+ﬁnite volume and/or boundary, the resulting inﬁnite dimensionality of the search space makes this approach impractical.
+We present in Section 2.2 a methodology to solve the optimal control problem (2) based on PINNs, followed in Section 2.3
+by the classical framework of adjoint-based optimization which will provide our benchmark solutions in Section 3.
+Before proceeding further, we discuss the dependence of the cost objective functional on the control variable c in (2).
+In general, the goal of the problem is to ﬁnd a control that results in a certain behavior for the state u, which can be
+formulated, e.g., as a quadratic objective of the form J (u). However, the nonlinearity of the governing PDE can lead to
+the existence of multiple optimal control solutions c∗ . To guarantee the uniqueness of the optimal control solution, it is
+common practice to include a regularization term that depends on c, resulting in a cost objective of the form J (u, c).
+The regularization term can also be motivated by smoothness requirements for the control c. Among the three nonlinear
+PDEs considered later in this paper, we include such a regularization term in the Kuramoto-Sivashinski example, but we
+deliberately choose not to do so in the Burgers and Navier-Stokes examples, for two reasons. First, one of our aims in
+this study is to compare the performance of the PINN and adjoint-based approaches at ﬁnding the best possible optimal
+control measured from a performance standpoint (i.e., how close the state u is to the desired behavior), which would be
+penalized by the presence of any regularization. Second, deep neural networks are empirically known to possess intrinsic
+regularization properties; a separate objective of this study is therefore to assess whether such inherent regularization
+would be reﬂected in the shape of the PINN optimal solution versus the adjoint-based solution, in the absence of explicit
+regularization. This being said, our problem formulation (2) can be applied to any choice of regularization.
+2.2. Physics-informed neural networks for optimal control
+Let us ﬁrst consider the forward problem deﬁned by the PDE (1) with prescribed control variable c. In the framework
+of physics-informed neural networks, the solution u(x, t ) of this forward problem is represented by a surrogate model
+uNN (x, t ; θ u ) in the form of a fully-connected neural network that takes (x, t ) as input and returns an approximation for u
+at this x and t as output. The vector θ u denotes the set of trainable parameters of the network, which propagates the input
+data through its  layers according to the sequence of operations
+
+z0 = (x, t ),
+
+(3a)
+
+k k −1
+
+k
+
+z = σ (W z
+
+ −1
+
+z =W z
+
+
+k
+
++ b ),
+
+1 ≤ k ≤  − 1,
+
+(3b)
+
++b .
+
+
+(3c)
+
+Each layer outputs a vector zk ∈ Rqk , where qk is the number of ‘neurons’, and is deﬁned by a weight matrix Wk ∈ Rqk ×qk−1 ,
+a bias vector bk ∈ Rqk , and a nonlinear activation function σ (·). Finally, the output of the last layer is used to represent the
+solution, that is, uNN (x, t ; θ u ) = z . For prescribed control variables c = (c v , cb , c0 ), the network parameters θ u = {Wk , bk }k=1
+are trained by minimizing the loss function
+
+1 
+Nr
+
++
+N
+
+|F [uNN (xri , t ir ; θ u ); c v ]|2 +
+
+i =1
+
+N0
+w0 
+
+N0
+
+wb 
+Nb
+
+Nr
+
+L(θ u , c) =
+
+Nb
+
+|B[uNN (xbi , t ib ; θ u ); cb ]|2
+
+i =1
+
+|I [uNN (x0i , 0; θ u ); c0 ]|2 ,
+
+(4)
+
+i =1
+N
+
+N
+
+where {xri , t ir }i =r 1 , {xbi , t ib }i =b1 , {x0i }i =01 each represent an arbitrary number of training points over which to enforce the PDE
+residual (1a), boundary conditions (1b), and initial condition (1c), respectively, and w b , w 0 are scalar weights for the boundary and initial loss components. A critical underpinning of PINNs is the use of automatic differentiation (AD) to compute
+the loss (4). By using the chain rule to compose the derivatives of successive algebraic operations, AD calculates the exact
+derivatives of the network output uNN (x, t ; θ u ) with respect to its inputs x and t. Thus, the various loss components in (4)
+can be computed exactly without inheriting the truncation error incurred by standard numerical discretization schemes. AnN
+other advantage of computing derivatives with AD is that the residual points {xi , t i }i =r 1 can be chosen arbitrarily, conferring
+PINNs their convenient mesh-free nature. Starting from randomly initialized parameters θ u , we can now use gradient-based
+optimization to ﬁnd an optimum set of values θ ∗u that minimizes (4). At each iteration k, the parameters are updated as
+
+θ ku+1 = θ ku − α (k)∇θ u L(θ ku ; c),
+
+(5)
+3
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+where α (k) is an adaptive learning rate set by the chosen optimizer. At the end of the training procedure, the trained neural
+network uNN (x, t ; θ ∗u ) approximately solves the forward problem (1).
+The PINN framework can be readily extended to the optimal control problem (2). Our approach is conceptually similar
+to the methodology proposed in [36] for solving PDE-constrained inverse design problems with PINNs, in which case c
+represents a set of design variables. For clarity of exposure, let us assume that we only have volume control, that is, c = c v
+(the treatment is similar for boundary or initial control). In addition to the neural network for u(x, t ), we construct a
+second fully-connected neural network to approximate the control variable c(x, t ). The neural network for c is denoted by
+cNN (x, t ; θ c ), with θ c the corresponding set of trainable parameters. Since we desire a solution for u and c that minimizes
+the cost functional J (u, c) in addition to solving the PDE (1), we simply add a term LJ penalizing the cost functional to
+the standard PINN loss (4), leading to the augmented loss function
+
+1 
+Nr
+
+L(θ u , θ c ) =
+
+Nr
+
+i =1
+
+wb
+|F [uNN (xri , t ir ; θ u ); cNN (xri , t ir ; θ c )]|2 +
+Nb
+
+w0 
+
+Nb
+
+
+|B[uNN (xbi , t ib ; θ u )]|2
+
+i =1
+
+N0
+
++
+
+N0
+
+|I [uNN (x0i , 0; θ u )]|2 + w J LJ (θ u , θ c ),
+
+(6)
+
+i =1
+
+where we have introduced a new scalar weight w J for the cost functional term. Due to the dependence of the PDE residual
+(1a) on the control c, the ﬁrst loss term is now a function of both θ u and θ c . The calculation of the term LJ (θ u , θ c ) depends
+N
+
+N
+
+on the form on the objective functional and may involve residual points {xri , t ir }i =r 1 or boundary points {xbi , t ib }i =b1 . Starting
+from randomly initialized parameters (θ u , θ c ), we can now use gradient-based optimization to ﬁnd an optimum set of
+values (θ ∗u , θ ∗c ) that minimizes (6). At each iteration k, the parameters from both networks are concurrently updated as
+
+θ ku+1 = θ ku − αu (k)∇θ u L(θ ku , θ kc ),
+
+(7a)
+
+θ kc+1 = θ kc −
+
+(7b)
+
+k
+k
+c (k)∇θ c L(θ u , θ c ).
+
+α
+
+At the end of the training procedure, the trained neural networks uNN (x, t ; θ ∗u ) and cNN (x, t ; θ ∗c ) approximately solve the
+optimal control problem (2).
+In all results to follow, we use Glorot initialization of the parameters [38], select a tanh activation function, and employ
+the Adam optimizer [39]. We also normalize the input (x, t ) before passing it to the ﬁrst layer of the neural network for u
+(and c), so that (3a) becomes
+
+
+z0 =
+
+x − μx t − μt
+
+σx
+
+,
+
+σt
+
+
+(8)
+
+,
+N
+
+where μx , σx , μt , and σt are the mean and standard deviation of the residual training points {xi , t i }i =r 1 .
+2.3. Adjoint-based optimal control
+The framework of adjoint-based optimal control is a direct extension of the method of Lagrange multipliers for constrained optimization to the case where the equality constraints are formulated as PDEs [35]. Applying this method to the
+constrained problem (2), one ﬁrst constructs the Lagrangian
+
+L(u, c, λ) = J (u, c) − λ, F [u; c],
+
+(9)
+
+where u is required to satisfy the boundary and initial conditions (1b) and (1c), λ = λ(x, t ) is the Lagrange multiplier or
+adjoint ﬁeld, and the inner product ·, · is deﬁned as
+
+T 
+a, b =
+
+a(x, t )T b(x, t )dxdt .
+
+(10)
+
+0 
+
+Then, the constrained problem (2) is equivalent to the unconstrained problem
+
+u∗ , c∗ , λ∗ = arg min L(u, c, λ),
+
+(11)
+
+u,c,λ
+
+whose solution is given by the stationary point(s) of the Lagrangian. This yields the relations
+4
+
+S. Mowlavi and S. Nabi
+
+
+
+Journal of Computational Physics 473 (2023) 111731
+
+
+
+∂L
+, δ u = 0 ∀ δ u,
+∂u
+
+
+∂L
+, δ c = 0 ∀ δ c,
+∂c
+
+
+∂L
+, δλ = 0 ∀ δλ,
+∂λ
+
+(12a)
+(12b)
+(12c)
+
+where the admissible variation u + δ u has to satisfy the boundary and initial conditions (1b) and (1c). The Fréchet derivative
+∂ L/∂ u, · is deﬁned so that
+
+
+
+
+∂L
+L(u +  δ u, c, λ) − L(u, c, λ)
+, δ u = lim
+
+→
+0
+∂u
+
+
+∀ δ u,
+
+(13)
+
+and similarly for ∂ L/∂ c, · and ∂ L/∂λ, ·. Expanding the stationarity conditions (12) leads to
+
+
+
+ 
+ 
+ 
+
+∂L
+∂J
+∂F
+∂J
+∂F †
+, δu =
+, δ u − λ,
+δu =
+−
+λ, δ u = 0 ∀ δ u,
+∂u
+∂u
+∂u
+∂u
+∂u
+
+ 
+ 
+ 
+
+∂F †
+∂L
+∂J
+∂F
+∂J
+, δc =
+, δ c − λ,
+δc =
+−
+λ, δ c = 0 ∀ δ c,
+∂c
+∂c
+∂c
+∂c
+∂c
+
+
+∂L
+, δλ = − δλ, F  = 0 ∀ δλ,
+∂λ
+
+(14a)
+(14b)
+(14c)
+
+where we have deﬁned the adjoint A† of a linear operator A as
+
+a, Ab = A† a, b ∀ a, b,
+
+(15)
+
+where a satisﬁes the boundary conditions carried by the operator A. The process of ﬁnding the adjoint operator A† involves
+integration by part and yields terminal and boundary conditions for the adjoint ﬁeld b. Thus, satisfying (14a) for given u
+and c gives the adjoint equation
+
+∂ J (u, c) ∂ F [u, c] †
+−
+λ = 0,
+∂u
+∂u
+
+(16)
+
+for the adjoint ﬁeld λ, with associated terminal and boundary conditions. The third stationary condition (14c) simply enforces the governing equation (1) for u given c, that is,
+
+F [u, c] = 0,
+
+(17)
+
+with associated initial and boundary conditions. When (14a) and (14c) are satisﬁed, we have J = L, and (14b) therefore
+gives the total gradient of the cost objective with respect to the control c,
+
+dJ (u, c)
+dc
+
+=
+
+∂ L(u, c) ∂ J (u, c) ∂ F [u, c] †
+=
+−
+λ.
+∂c
+∂c
+∂c
+
+(18)
+
+For the optimal solution, dJ (u∗ , c∗ )/dc = 0 holds.
+There exist various adjoint-based algorithms for obtaining the optimal solution u∗ , c∗ , λ∗ to the PDE-constrained optimization problem (2). These algorithms solve the same set of equations, namely the direct (forward) PDE (17) and adjoint
+PDE (16), to determine the sensitivity of the cost function to the design parameters, given by (18). The difference is, however,
+in the manner by which the optimal solution is obtained by each algorithm. In this work, we use the direct-adjoint-looping
+(DAL) algorithm [27,40,29], which proceeds as follows. At each iteration k, one ﬁrst solves the forward PDE (17) for uk ,
+given the current control ck . With uk and ck in hand, one then solves the adjoint PDE (16) for λk in backward time since
+the adjoint PDE contains a terminal condition instead of an initial condition. Finally, one computes the gradient of the cost
+objective using (18), which is then used to update the control as
+
+ck+1 = ck − β
+
+dJ (uk , ck )
+dc
+
+(19)
+
+,
+
+with β a learning rate that we will keep ﬁxed. It should be noted that the convergence rate can be increased by employing
+more sophisticated update formulas such as quasi-Newton methods [41]. In our case, every gradient update only requires
+two PDE solutions, one for the forward PDE and one for the adjoint PDE. We end the iterations once the cost objective has
+stopped decreasing, or alternatively once the gradient (18) becomes small enough.
+5
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+Fig. 1. Guidelines for obtaining a good optimal control solution using the PINN framework.
+
+2.4. Guidelines for training and evaluating the PINN optimal solution
+The PINN methodology presented in Section 2.2 involves training neural networks that approximate the state variable u
+and the control variable c by minimizing the augmented loss function (6), which can be written as
+
+L(θ u , θ c ) = LF /B/I (θ u , θ c ) + w J LJ (θ u , θ c ),
+
+(20)
+
+where LF /B/I (θ u , θ c ) includes the ﬁrst three terms in (6) relating to the PDE residual, boundary conditions and initial
+condition. Thus, (20) is a multi-objective loss that seeks to simultaneously enforce the governing PDE and decrease the
+cost objective. However, incorporating various terms in the loss function makes the neural networks harder to train [42],
+and the quality of the optimal solution is not guaranteed since the cost objective might be minimized at the expense of
+satisfying the PDE or vice-versa. Issues arising from a composite loss function are not new to PINNs – even forward problems
+are characterized by loss functions containing various components accounting for the PDE residual and initial/boundary
+conditions; see (4). Yet, optimal control problems pose an additional challenge due to the possible scale difference between
+the PDE loss LF /B/I which should ideally vanish, and the cost objective loss LJ which might remain ﬁnite in the true
+optimal solution. Several recent studies try to address the issue of balancing different objectives when training PINNs, using
+adaptive weighting strategies [43–46], augmented Lagrangian methods [36,47], or bi-level approaches that decouple the
+different objectives [48,49].
+In the present paper, however, our goal is to evaluate the feasibility and performance of the original PINN framework
+in solving optimal control problems. We therefore leave aside the aforementioned recent advances, and instead propose
+simple yet effective guidelines for obtaining an optimal solution that minimizes the cost objective while satisfying the PDE
+constraint. These guidelines are illustrated in Fig. 1 and consist of two parts:
+1. First, we ensure that the network architecture employed for uNN and training procedure are appropriate for the type of
+PDE constraining the optimal control problem of interest. This can be accomplished by ﬁrst computing a PINN solution
+to a forward problem based on the same PDE, ideally with a known solution, using the forward loss (4) (which is equal
+to LF /B/I for a prescribed control c). During this process, one ﬁnds a network architecture, distribution of residual
+points, training hyperparameters (number of epochs, batch size, etc), and weights w b , w 0 that are tailored for the PDE
+at hand and can be then carried over to the solution of the optimal control problem. We emphasize that the PINN
+solution of forward problems governed by PDEs has been extensively treated in the literature [15,50].
+2. For the PINN solution of the optimal control problem, the only remaining parameters to choose are the network architecture for cNN and the weight w J in the loss (20). In particular, the choice of w J is critical since it controls a
+trade-off between the two potentially conﬂicting objectives LF /B/I and LJ : large w J means that LJ is minimized
+at the expense of LF /B/I , while small w J leads to the opposite behavior. To ﬁnd the optimal w J yielding a solution
+6
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+that simultaneously minimizes the cost objective and satisﬁes the PDE constraint, we propose a two-step line search
+strategy.
+Step 1. Following the PINN methodology presented in Section 2.2, we compute a solution c∗NN to the optimal control
+problem by creating a ﬁrst neural network uNN for the state variable with the architecture obtained previously, a
+second neural network cNN for the control variable, and by minimizing the loss (20). We repeat this process for a range
+of values of w J .
+Step 2. We evaluate the performance of the optimal control c∗NN obtained for each w J by solving the forward problem
+corresponding to c∗NN with another PINN. Speciﬁcally, we train a separate neural network uNN to minimize the loss (4)
+with ﬁxed c = c∗NN (which corresponds to LF /B/I with ﬁxed control). We then use the solution to this forward problem
+to compute an approximate cost objective J (uNN , c∗NN ). Finally, we select as our ﬁnal solution the optimal control c∗NN
+given by the value of w J that yields the smallest approximate J .
+3. Results
+We apply the PINN and adjoint-based approaches for solving optimal control problems to four PDEs modeling a range
+of physical systems – the Laplace, Burgers, Kuramoto-Sivashinsky, and Navier-Stokes equations. In each case, we follow the
+guidelines presented in Section 2.4 to obtain the PINN solution. That is, we ﬁrst validate our PINN architecture by solving
+a forward problem without (or with given) control and comparing the PINN solution with a reference solution (which is
+either obtained analytically or from a high-ﬁdelity numerical code). We then solve the optimal control problem using the
+two-step line search strategy described above.
+We compare rigorously the performance of the optimal control solutions c∗ obtained from the PINN and adjoint-based
+DAL frameworks, which is quantiﬁed by the value of the cost objective J corresponding to c∗ . To compute an accurate
+estimate of J , we use a high-ﬁdelity numerical code (based on ﬁnite-element or spectral methods) to compute the solution
+uHF to the forward problem with ﬁxed control equal to c∗ coming from the PINN or DAL solution, yielding an accurate cost
+objective estimate J (uHF , c∗ ). This ensures a rigorous evaluation and fair comparison of the PINN and DAL optimal control
+solutions c∗ .
+3.1. Laplace equation
+Let us ﬁrst consider the Laplace equation
+
+∂ 2u ∂ 2u
++ 2 = 0,
+∂ x2
+∂y
+
+(21)
+
+where the potential u (x, y ) is deﬁned in a square domain (x, y ) ∈ [0, 1] × [0, 1]. The boundary conditions will be speciﬁed
+below. The linearity of the Laplace equation implies that any derivative optimal control problem deﬁned by a quadratic cost
+objective will be convex [33], which makes it an ideal setting for a ﬁrst comparison between the PINN and DAL frameworks.
+3.1.1. Forward problem
+We ﬁrst solve the forward problem deﬁned by the boundary conditions
+
+u (x, 1) = sin π x,
+
+u (x, 0) = u (0, y ) = u (1, y ) = 0.
+
+(22)
+
+For these boundary conditions, the Laplace equation admits the analytical solution
+
+ua (x, y ) = cos(π x) sinh(π y ),
+
+(23)
+
+which we will use as a benchmark to evaluate the PINN solution.
+To solve the problem in the PINN framework, we represent u (x, y ) with a neural network containing 4 hidden layers
+of 50 neurons each, which we train using the loss (4) according to the gradient update formula (5). To evaluate the loss,
+we sample N r = 10000 residual training points (xi , t i ) ∈ [0, 1] × [0, 1] using a Latin hypercube sampling (LHS) strategy, and
+we select N b = 160 equally-spaced boundary training points (xi , t i ) on the boundary of the domain. The entire set of N r
+residual points is randomly separated into 10 minibatches of N r /10 = 1000 points each. During each gradient update (5), the
+residual loss component is calculated using one minibatch of residual points. One epoch of training is deﬁned as a complete
+pass through the entire set of N r residual points, that is, through all 10 minibatches. At the beginning of each epoch, the
+N r residual points are shuﬄed and separated into 10 new minibatches. We set uniform scalar weights w r = w b = 1. Finally,
+we choose an initial learning rate of α = 10−3 and decrease it by a factor 10 after 3000 epochs, for a total of 6000 training
+epochs.
+The different loss components during the training process are shown in Fig. 2(a), and the relative L 2 error of the PINN
+solution versus its analytical counterpart, ||u − ua ||2 /||ua ||2 , is displayed in Fig. 2(b). The L 2 error is equivalent to a test error
+since it is computed on a 100 × 100 cartesian grid independent from the residual training points. Figs. 2(a,b) reveal that
+decreasing loss components are directly correlated with a decreasing test error, and can thus be monitored during training
+7
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+Fig. 2. Forward solution of the Laplace equation (21). (a,b) Convergence of the loss and relative L 2 test error during training of the PINN solution. (c)
+Analytical solution ua , (d) trained PINN solution u and (e) its local absolute error |u − ua |. (For interpretation of the colors in the ﬁgure(s), the reader is
+referred to the web version of this article.)
+
+to gauge the accuracy of the PINN solution. The analytical solution ua and the trained PINN solution u are displayed in
+Figs. 2(c,d), while the point-wise absolute difference between the two is reported in Fig. 2(e). The excellent accuracy of the
+PINN forward solution validates the choice of neural network parameters and training points.
+3.1.2. Optimal control problem
+Next, we use the same PINN architecture to solve an optimal control problem constrained on the Laplace equation.
+Consider now the boundary conditions
+
+u (x, 0) = sin π x,
+
+u (x, 1) = f (x),
+
+u (0, y ) = u (1, y ),
+
+∂u
+∂u
+(0, y ) =
+(1, y )
+∂x
+∂x
+
+(24)
+
+where f (x) is a control potential applied to the top wall, and the boundary conditions are now periodic along the x
+direction. We then seek to solve the convex optimal control problem deﬁned as
+
+f ∗ = arg min J (u )
+f
+
+subject to (21) and (24),
+
+(25)
+
+where the cost objective is
+
+J (u ) =
+
+2
+1 
+
+ ∂u
+ (x, 1) − qd (x) dx,
+
+∂ y
+
+qd (x) = cos(π x).
+
+(26)
+
+0
+
+In other words, we want to ﬁnd the optimal potential f ∗ (x) at the top wall that produces the desired ﬂux qd (x). This
+problem has the analytical optimal solution
+
+f a∗ (x) = sech(2π ) sin(2π x) +
+ua∗ (x, y ) =
+
+1
+2
+
+1
+2π
+
+tanh(2π ) cos(2π x),
+
+sech(2π ) sin(2π x)(e 2π ( y −1) + e 2π (1− y ) ) +
+
+(27a)
+1
+4π
+
+sech(2π ) cos(2π x)(e 2π y − e −2π y ),
+
+(27b)
+
+which we will use to evaluate the accuracy of the PINN and DAL optimal solutions.
+To solve the optimal control problem with PINNs, we deﬁne a second neural network for f (x) consisting of 3 hidden
+layers of 30 neurons each. Following the guidelines presented in Section 2.4, we keep the same architecture as before (albeit
+with newly initialized parameters) for the network representing u (x, y ). We then train simultaneously both neural networks
+8
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+Fig. 3. Optimal solution of the Laplace control problem (25). (a) Components of the loss (20) obtained at the training of the PINN optimal control solution
+versus weight w J (step 1 of the line search strategy). (b) Cost objective estimate obtained by a separate PINN solution of the forward problem with ﬁxed
+control from the PINN optimal solution versus w J (step 2 of the line search strategy). The best optimal control, obtained with w J = 100, is shown by the
+red dot. (c) Convergence of the loss during training of the PINN optimal control solution (for w J = 100). (d) Convergence of the cost objective during DAL
+iterations. (e) Optimal top wall potential f ∗ obtained from the PINN (for w J = 100) and DAL frameworks, compared with the top wall potential f a∗ of the
+analytical solution.
+
+using the loss (6) and the gradient update formula (7). We use the same training points as before, and evaluate the integral
+in the cost objective (26) using the midpoint rule at N J = 41 equally-spaced training points xi ∈ [0, 1]. We use uniform
+scalar weights w r = w b = 1, we choose an initial learning rate of α = 10−3 and decrease it by a factor 10 after 5000 epochs,
+for a total of 10000 training epochs. We repeat this procedure for 11 values of w J between 10−3 and 107 .
+To ﬁnd the DAL optimal solution, we implement the DAL iterative procedure in the ﬁnite-volume solver OpenFOAM. The
+adjoint Laplace equation and the gradient of the cost objective are given in [51], in which the same problem is considered.
+The DAL optimal solution is obtained by iteratively solving the Laplace equation and its adjoint on a 40 × 40 grid, updating
+the control f (x) at each iteration with the gradient descent formula (19). We start the iterations with a zero initial guess
+for f (x) and employ a learning rate β = 1.
+Beginning with Step 1 of the line search strategy presented in Section 2.4, we visualize in Fig. 3(a) the two components
+LF /B and LJ of the loss (20) obtained at the end of training of the PINN optimal control solution, for each considered
+value of w J . As expected, LF /B and LJ vary in opposite directions as w J increases. Moving to Step 2 of the line search
+strategy, we report in Fig. 3(b) the cost objective value J obtained by a separate PINN solution of the corresponding forward
+problem, with ﬁxed control from the optimal solution obtained in Step 1, for each value of w J . We observe that the control
+solution obtained with w J = 100, shown by the red dot, yields the lowest J . It is therefore this optimal control solution
+that we analyze hereafter and compare with the DAL solution.
+The various loss components during training of the PINN optimal control solution (for w J = 100) are shown in Fig. 3(c),
+while the convergence of the cost objective during the DAL iterations is shown in Fig. 3(d). Fig. 3(e) shows the optimal top
+wall potentials f ∗ obtained from the PINN and DAL frameworks, together with their analytical counterpart f a∗ . The excellent
+agreement between the three potentials demonstrates that the PINN and DAL frameworks both found the global solution to
+this convex optimal control problem.
+3.2. Burgers equation
+We then consider the one-dimensional Burgers equation, a prototypical nonlinear hyperbolic PDE that takes the form
+
+∂u
+∂u
+∂ 2u
++u
+=ν 2,
+∂t
+∂x
+∂x
+
+(28)
+9
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+Fig. 4. Forward solution of the Burgers equation (28). (a,b) Convergence of the loss and relative L 2 test error during training of the PINN solution. (c)
+Snapshots at ﬁnal time of the trained PINN and analytical solutions. (d) Analytical solution ua , (e) trained PINN solution u and (f) its local absolute error
+|u − u a | .
+
+where u (x, t ) is the velocity at position x ∈ [0, L ] and time t ∈ [0, T ]. We assign periodic boundary conditions and select the
+viscosity ν = 0.01; the initial condition u (x, 0) = u 0 (x) will be speciﬁed later. We take L = 4, for which the Burgers equation
+possesses the analytical solution
+
+2νπ e −π ν (t −5) sin(π x)
+2
+
+ua (x, t ) =
+
+2 + e −π ν (t −5) cos(π x)
+2
+
+(29)
+
+.
+
+3.2.1. Forward problem
+For the forward problem, we compute the evolution of the system up to the time horizon T = 5 given the initial condition u 0 (x) = ua (x, 0). In this way, the accuracy of the PINN solution can be evaluated against the analytical solution (29).
+The PINN solution is obtained by representing u (x, t ) with a network containing 4 hidden layers of 50 neurons each,
+which we train using the loss (4). To evaluate the loss, we sample N r = 20000 residual training points (xi , t i ) ∈ [0, L ] × [0, T ]
+using LHS. We select N b = 82 equally-spaced boundary training points (xi , t i ) ∈ {0, L } × [0, T ], and N 0 = 41 equally-spaced
+initial training points (xi , t i ) ∈ [0, L ] × {0}. As before, the set of N r residual points is randomly separated into 10 minibatches
+of N r /10 = 2000 points, and we set uniform scalar weights w r = w b = w 0 = 1. Finally, we choose an initial learning rate of
+α = 10−3 and decrease it by a factor 10 after 5k epochs of training, for a total of 10k epochs.
+The different loss components during the training process are shown in Fig. 4(a), and the relative L 2 error of the PINN
+solution versus its analytical counterpart, ||u − ua ||2 /||ua ||2 , is displayed in Fig. 4(b). As was observed in the case of the
+Laplace equation, decreasing loss components are directly correlated with a decreasing solution error. Snapshots of the
+trained PINN and analytical solutions at ﬁnal time t = 5, shown in Fig. 4(c), are in excellent agreement. This is conﬁrmed by
+the contour plots of the analytical and trained PINN solutions displayed in Figs. 4(d,e), and the absolute error between them
+shown in Fig. 4(f). The good accuracy of the PINN solution validates the choice of neural network parameters and training
+points.
+3.2.2. Optimal control problem
+Next, we turn our attention to an optimal control problem, which we deﬁne as
+
+u ∗0 = arg min J (u )
+u0
+
+subject to (28),
+
+(30)
+
+where the objective cost is
+10
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+Fig. 5. Optimal solution of the Burgers control problem (30). (a) Components of the loss (20) obtained at the end of training of the PINN optimal control
+solution versus weight w J (step 1 of the line search strategy). (b) Cost objective estimate obtained by a separate PINN solution of the forward problem
+with ﬁxed control from the PINN optimal solution versus w J (step 2 of the line search strategy). The best optimal control, obtained with w J = 1, is
+shown by the red dot. (c) Convergence of the loss during training of the PINN optimal control solution (for w J = 1). (d) Convergence of the cost objective
+during DAL iterations. (e) Optimal initial condition u ∗0 obtained using the PINN (for w J = 1) and DAL frameworks, compared with the initial state of the
+analytical solution. (f) Snapshots at ﬁnal time of two spectral solutions calculated using the optimal initial conditions u ∗0 from the PINN Convergence of the
+loss during training of the PINN optimal control solution (for w J = 1) and DAL frameworks, compared with the ﬁnal state of the analytical solution.
+
+J (u ) =
+
+1
+
+L
+|u (x, T ) − ua (x, T )|2 dx.
+
+2
+
+(31)
+
+0
+
+In other words, we seek the optimal initial condition u ∗0 (x) that results in the same ﬁnal state as the analytical solution
+(29). Because of the nonlinearity of the Burgers equation, this optimal control problem is no longer convex as was the case
+for the Laplace equation, and it may therefore possess multiple local minima in addition to the global minimum given by
+ua (x, 0).
+The PINN optimal solution is obtained by deﬁning a second neural network for u 0 (x), this time consisting of 3 hidden
+layers of 30 neurons each, in addition to the network for u (x, t ) for which we keep the same architecture as before. We then
+train simultaneously both neural networks using the loss (6), starting from a new initialization of the parameters. We use
+the same training points as before, and evaluate the integral in the cost objective (31) using the midpoint rule at N J = 41
+equally-spaced cost training points xi ∈ [0, L ]. We use uniform scalar weights w r = w b = w 0 = w J = 1, choose an initial
+learning rate of α = 10−3 and decrease it by a factor 10 after 20k and 25k epochs of training, for a total of 30k epochs. We
+repeat this procedure for 10 values of w J between 10−3 and 106 .
+The DAL optimal solution is obtained by iteratively solving the Burgers and adjoint Burgers equations, updating the
+control u 0 (x) at each iteration with the gradient descent formula (19). The adjoint Burgers equation and the gradient of
+the cost objective are given in Appendix A. A spectral solver with 256 Fourier modes and semi-implicit Euler scheme with
+dt = 10−3 is used to solve the forward and adjoint Burgers equations at each iteration. We start the iterations with a zero
+initial guess for the control u 0 (x) and employ a learning rate β = 1.
+Beginning with Step 1 of the line search strategy presented in Section 2.4, we visualize in Fig. 5(a) the two components
+LF /B/I and LJ of the loss (20) obtained at the end of training of the PINN optimal control solution, for each considered
+value of w J . Moving to Step 2 of the line search strategy, we report in Fig. 5(b) the cost objective value J obtained by
+a separate PINN solution of the corresponding forward problem, with ﬁxed control from the optimal solution obtained in
+Step 1, for each value of w J . We observe that the control solution obtained with w J = 1, shown by the red dot, yields the
+lowest J . It is therefore this optimal control solution that we analyze hereafter and compare with the DAL solution.
+The various loss components during training of the PINN optimal solution (for w J = 1) are displayed in Fig. 5(c), while
+the convergence of the cost objective during the DAL iterations is shown in Figs. 5(d). Fig. 5(e) compares the optimal initial
+conditions u ∗0 obtained using the PINN and DAL frameworks, together with the initial state ua (x, 0) of the analytical solution
+11
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+(29). In order to evaluate the quality of the PINN and DAL optimal solutions, we use a spectral solver (the same used in the
+DAL iterations) to compute the ﬁnal state u (x, 5) corresponding to the optimal initial conditions u ∗0 from the PINN and DAL
+frameworks. Fig. 5(f) shows the resulting computed states u (x, 5) alongside the target ﬁnal state ua (x, 5) of the analytical
+solution. The corresponding cost values are J = 2.27 · 10−7 and J = 7.12 · 10−8 for the PINN and DAL optimal initial
+conditions, respectively. Although the initial conditions identiﬁed by the PINN and DAL frameworks differ substantially from
+ua (x, 0), they both result in a ﬁnal state that is almost identical to ua (x, 5). This is a consequence of the nonlinearity of the
+Burgers equation, which allows noticeably different initial conditions to result in extremely similar ﬁnal states – in other
+words, the optimization landscape for this problem admits multiple local minima with small cost objective values. In this
+situation, it is interesting to observe that the DAL procedure ﬁnds a slightly better optimal initial condition u ∗0 than the
+PINN framework, but at the expense of its smoothness.
+3.3. Kuromoto-Sivashinsky equation
+The next example we consider is the one-dimensional Kuramoto-Sivashinsky (KS) equation, one of the simplest PDEs
+that generates chaotic behavior under certain conditions. The KS equation takes the form
+
+∂u
+∂ u ∂ 2u ∂ 4u
++u
++ 2 + 4 = f (x, t ),
+∂t
+∂x
+∂x
+∂x
+
+(32)
+
+where u (x, t ) is the velocity at position x ∈ [0, L ] and time t ∈ [0, T ], and f (x, t ) is a distributed control force. We use
+periodic boundary conditions and choose as initial condition
+
+
+
+u 0 (x) = cos
+
+2π x
+
+
+
+
+
++ sech
+
+10
+
+x − L /2
+
+
+
+5
+
+(33)
+
+.
+
+Solutions to the KS equation without forcing undergo a sequence of bifurcations as L increases. The zero state is a stable
+ﬁxed-point solution for L < 2π , but becomes linearly unstable for L > 2π . For even larger L, the solution becomes chaotic.
+Here, we choose L = 50 which corresponds to the chaotic regime [52], with the aim of ﬁnding a control force f (x, t ) that
+drives the state u towards the unstable zero ﬁxed-point solution.
+3.3.1. Forward problem
+For the forward problem, we solve the KS equation up to the time horizon T = 10 given the initial condition (33) and
+f (x, t ) = 0. The reference solution, u s , is given by a spectral discretization of the KS equation, employing 256 Fourier modes
+and a semi-implicit Euler scheme with time step dt = 10−4 .
+The PINN solution is obtained by representing u (x, t ) with a network containing 5 hidden layers of 50 neurons each,
+which we train by minimizing the loss (4). To this end, we sample N r = 80000 residual training points (xi , t i ) ∈ [0, L ] × [0, T ]
+using LHS. We select N b = 82 equally-spaced boundary training points (xi , t i ) ∈ {0, L } × [0, T ], and N 0 = 41 equally-spaced
+initial training points (xi , t i ) ∈ [0, L ] × {0}. At the beginning of each epoch, the entire set of N r residual points is shuﬄed
+and divided into 20 minibatches of N r /20 = 4000 points each. We set scalar weights w r = w b = w 0 = 1, choose an initial
+learning rate of α = 10−3 and decrease it by a factor 10 after 10k and 20k epochs, for a total of 30k epochs.
+The different loss components during the training of the PINN forward solution are shown in Fig. 6(a). Snapshots of the
+trained PINN and reference spectral solutions at ﬁnal time t = 10 are shown in Fig. 6(b), displaying excellent agreement
+with each other. Contour plots of the spectral and trained PINN solutions are displayed in Figs. 6(c,d), and the absolute error
+between the two is shown in Fig. 6(e). The low error of the PINN solution validates the choice of neural network parameters
+and training points.
+3.3.2. Optimal control problem
+We deﬁne the optimal control problem as
+
+f ∗ = arg min J (u , f )
+f
+
+subject to (32),
+
+(34)
+
+where the objective cost is
+
+J (u , f ) =
+
+1
+
+T L
+(|u (x, t )|2 + σ | f (x, t )|2 )dxdt ,
+
+2
+0
+
+(35)
+
+0
+
+in which we choose σ = 1. Thus, we seek the optimal control force f ∗ (x, t ) that drives the system state towards the unstable
+zero ﬁxed-point solution by minimizing a quadratic cost that penalizes the norms of both the state u and the control force
+f . Penalizing the norm of f is a way to regularize the optimal control problem, without which the solution for f ∗ would
+be one that instantaneously pushes the state to zero right after initial time, resulting in inﬁnitely large f ∗ at initial time.
+In this particular example, therefore, including such regularization in (35) is necessary to prevent the optimal control force
+12
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+Fig. 6. Forward solution of the KS equation (32). (a) Convergence of the loss during training of the PINN solution. (b) Snapshots at ﬁnal time of the trained
+PINN solution and a reference spectral solution. (c) Reference spectral solution u s , (d) trained PINN solution u and (e) its local absolute error |u − u s |.
+
+from growing unbounded at initial time. We note that our formulation mimics the classical problem in control theory of
+ﬁnding a controller that drives the state of a dynamical system towards an unstable ﬁxed point, which is usually solved by
+minimizing a quadratic cost functional of the same form as (35).
+To solve this problem in the PINN framework, we deﬁne a second neural network for f (x, t ) with the same architecture
+as that for u (x, t ), which was validated in the forward problem. We then train both networks simultaneously using the
+loss (6), starting from a new initialization of the parameters. We use the same training points as before, and evaluate the
+integral in the cost objective (35) using Monte Carlo integration with the same minibatch of residual training points used
+in evaluating the residual loss component. We use the scalar weights w r = w b = w 0 = 1 and w J = 10−3 , choose an initial
+learning rate of 10−3 and decrease it by a factor 10 after 10k and 20k epochs of training, for a total of 30k epochs. We
+repeat this procedure for 10 values of w J between 10−8 and 10.
+The DAL optimal solution is obtained by iteratively solving the KS and adjoint KS equations, updating the control f (x, t )
+at each iteration with the gradient descent formula (19). The adjoint KS equation and the gradient of the cost objective are
+given in Appendix B. A spectral solver with 256 Fourier modes and semi-implicit Euler scheme with dt = 10−4 is used to
+solve the forward and adjoint KS equations at each iteration. We start the iterations with a zero initial guess for the control
+f (x, t ) and employ a learning rate β = 0.001.
+Beginning with Step 1 of the line search strategy presented in Section 2.4, we visualize in Fig. 7(a) the two components
+LF /B/I and LJ of the loss (20) obtained at the end of training of the PINN optimal control solution, for each considered
+value of w J . Moving to Step 2 of the line search strategy, we report in Fig. 7(b) the cost objective value J obtained by a
+separate PINN solution of the corresponding forward problem, with ﬁxed control from the optimal solution obtained in Step
+1, for each value of w J . We observe that the control solution obtained with w J = 10−3 , shown by the red dot, yields the
+lowest J . It is therefore this optimal control solution that we analyze hereafter and compare with the DAL solution.
+The different loss components during training of the PINN optimal solution (for w J = 10−3 ) are displayed in Fig. 7(c).
+The convergence of the cost objective during the DAL iterations is displayed in Fig. 7(d). The optimal forcing solutions found
+by the PINN and DAL frameworks are shown in Figs. 7(e,f) and look very similar. We evaluate the quality of these optimal
+forcings by using a spectral solver (the same used in the DAL iterations) to compute the corresponding state u (x, t ) up
+to the time horizon T = 10. Snapshots at ﬁnal time and contour plots of the resulting states are shown in Figs. 7(g,h,i),
+showing that both PINN and DAL optimal forcings manage to drive the state towards near-zero values. The corresponding
+cost objectives, calculated from the spectral solutions, have remarkably similar values of J = 20.58 and J = 20.64 for the
+PINN and DAL optimal forcings, respectively.
+13
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+Fig. 7. Optimal solution of the KS control problem (34). (a) Components of the loss (20) obtained at the end of training of the PINN optimal control solution
+versus weight w J (step 1 of the line search strategy). (b) Cost objective estimate obtained by a separate PINN solution of the forward problem with ﬁxed
+control from the PINN optimal solution versus w J (step 2 of the line search strategy). The best optimal control, obtained with w J = 10−3 , is shown by
+the red dot. (c) Convergence of the loss during training of the PINN optimal control solution (for w J = 10−3 ). (d) Convergence of the cost objective during
+DAL iterations. (e,f) Optimal control forces f ∗ obtained from the PINN (for w J = 10−3 ) and DAL frameworks. (g,h,i) Snapshots at ﬁnal time and contour
+plots of two spectral solutions calculated using the optimal control forces f ∗ obtained from the PINN (for w J = 10−3 ) and DAL frameworks.
+
+3.4. Navier-Stokes equations
+As a last example, we consider the steady 2D incompressible Navier-Stokes (NS) equations in the geometry depicted in
+Fig. 8. In non-dimensional form, these equations are expressed as
+
+(u · ∇)u = −∇ p +
+
+1
+Re
+
+∇ 2 u,
+
+(36a)
+
+∇ · u = 0,
+
+(36b)
+
+where the velocity ﬁeld u(x) = (u (x, y ), v (x, y )) and pressure ﬁeld p (x) = p (x, y ) are deﬁned in the rectangular 2D domain
+ = ( L x , L y ) = (1.5, 1) shown in Fig. 8, and we choose the Reynolds number Re = 100. The boundary conditions for the
+velocity are
+
+u = (u in ( y ), 0)
+
+on
+
+i,
+
+(37a)
+
+u = ( v b (x), 0)
+
+on
+
+b,
+
+(37b)
+
+u = ( v s (x), 0)
+
+on
+
+s,
+
+(37c)
+14
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+Fig. 8. Scheme of the setup for the Navier-Stokes equation. A prescribed horizontal velocity proﬁle u( y ) = (u in ( y ), 0) is assigned to the inlet i . The blowing
+and suction boundaries b and s are assigned a uniform vertical velocity u(x) = (0.3, 0). The ﬂow leaves the domain at the outﬂow boundary o , and the
+remaining boundaries w are no-slip walls.
+
+(n · ∇)u = (0, 0) on
+
+o,
+
+(37d)
+
+u = (0, 0)
+
+w,
+
+(37e)
+
+on
+
+while the boundary conditions for the pressure are
+
+(n · ∇) p = 0 on
+
+i ∪
+
+p = pa
+
+o,
+
+on
+
+b∪
+
+s∪
+
+(38a)
+
+w,
+
+(38b)
+
+where n denotes the unit surface normal, and pa is a reference pressure that we set to zero. These boundary conditions
+correspond to a prescribed horizontal velocity proﬁle u in ( y ) at an inlet i , a prescribed velocity proﬁle v b (x) and v s (x) at
+two blowing and suction boundaries b and s , an outﬂow boundary o and no-slip walls w . We choose v b (x) = v s (x) =
+0.3, and u in ( y ) will be speciﬁed later. Although pressure boundary conditions are not usually stated explicitly, we will see
+below that they are important when evaluating the accuracy of the PINN solution.
+3.4.1. Forward problem
+We begin by solving a forward problem, deﬁned by specifying a parabolic inlet velocity proﬁle u in ( y ) = u parab ( y ) =
+4 y (1 − y )/ L 2y . We compare the PINN solution to this problem with a reference numerical solution calculated using the
+ﬁnite-volume code OpenFOAM [53].
+The PINN solution is obtained by representing u (x, y ), v (x, y ), p (x, y ) with a single network containing 5 hidden layers
+of 50 neurons each. The network takes (x, y ) as input and outputs (u , v , p ) at the corresponding location. It is trained by
+minimizing the loss (4) using the Adam optimizer, starting from random initial weights. To evaluate the loss, we sample
+N r = 40000 residual training points (xi , y i ) ∈  using LHS with 30000 points distributed in the entire domain and 10000
+points distributed in 4 boxes of size 0.1 × 0.02 adjacent to the endpoints of b and s . We select N b = 328 boundary training
+points (xi , y i ), 82 of them equally spaced along the vertical boundaries i and o , and the rest equally spaced along the
+horizontal boundaries b , s , and w . At the beginning of each epoch, the entire set of N r residual points is shuﬄed and
+divided into 10 minibatches of N r /10 = 4000 points each. We set scalar weights λru-mom = λrv-mom = λrcont = 1 and w b = 100,
+with λru-mom , λrv-mom and λrcont denoting the weights of the residuals corresponding to the u- and v-momentum equations
+(36a) and continuity equation (36b). Finally, we choose an initial learning rate of α = 10−3 and decrease it by a factor 10
+after 40k and 80k epochs, for a total of 100k epochs.
+The ﬁnite-volume solution is carried out using the icoFOAM solver in OpenFOAM. Pressure and velocity are decoupled
+using the SIMPLE algorithm [54] technique. For the convection terms, second order Gaussian integration is used with the
+Sweby limiter [55] for numerical stability. For diffusion, Gaussian integration with central-differencing interpolation is used.
+The discretized algebraic equations are solved using the preconditioned biconjugate gradient (PBiCG) method. We employ a
+mesh of size 400 elements (20 × 20), above which the cost function becomes independent of the mesh size. Anticipating
+the DAL solution of the optimal control problem, for which we will need to compute the gradient of the cost objective with
+respect to the inlet velocity proﬁle, we perform local mesh reﬁnements at the inlet for a better accuracy of the gradient
+calculation. Further, we found that using an upwind and ﬁrst order method for solving the adjoint equations resulted in
+inaccurate gradients, and hence those methods were not adopted [40,29].
+The different loss components during the training of the PINN forward solution are shown in Fig. 9(a). The horizontal
+and vertical velocity proﬁles at the outlet boundary o predicted by the trained PINN and reference OpenFOAM solutions
+are shown in Fig. 9(b), displaying very good agreement with each other. The horizontal velocity proﬁle is noticeably skewed
+upward, reaching its maximum value at y = 0.7. The velocity magnitude, streamlines and pressure ﬁelds corresponding to
+the OpenFOAM and PINN solutions are shown in Figs. 9(c,d,e,f), and reveal that the skewed outlet velocity proﬁle is caused
+15
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+Fig. 9. Forward solution of the Navier-Stokes equation (36). (a) Convergence of the loss during training of the PINN solution. (b) Velocity proﬁle at the outlet
+o of the trained PINN and the reference OpenFOAM solution. (c,e,g) Velocity magnitude and streamlines of the OpenFOAM and trained PINN solutions,
+and absolute error between them. (d,f,h) Pressure ﬁeld of the OpenFOAM and trained PINN solutions.
+
+by the blowing and suction boundaries, which deﬂect the parabolic inlet proﬁle as the ﬂuid moves through the channel.
+The low absolute error between the velocity magnitudes and pressure ﬁelds from the two solutions, shown in Figs. 9(g,h),
+validates the choice of neural network parameters and training points.
+We note that the literature on PINNs often mentions the nonnecessity of imposing pressure boundary conditions (BCs)
+in the PINN framework. While this is clearly advantageous when they are unknown or lack a clear physical motivation,
+pressure BCs do affect the resulting velocity proﬁle. For our purpose of validating the PINN solution against a reference
+OpenFOAM solution, we thus found it important to include in the PINN loss function the same pressure BCs (38) employed
+in the OpenFOAM solver. In this way, we ensure that the PINN and OpenFOAM solvers are compared based on the exact
+same system of equations.
+16
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+3.4.2. Optimal control problem
+We observed in the forward problem that the parabolic inlet velocity proﬁle u in ( y ) = u parab ( y ) produces a skewed
+velocity proﬁle at the outlet, Fig. 9(b). Is it then possible to ﬁnd an inlet velocity proﬁle u ∗in ( y ) so that the outlet velocity
+proﬁle is close to parabolic? This motivates the control problem
+
+u ∗in = arg min J (u)
+u in
+
+subject to (36), (37) and (38),
+
+(39)
+
+where the objective cost is
+
+J (u) =
+
+1
+2
+
+L y
+(|u ( L x , y ) − u parab ( y )|2 + | v ( L x , y )|2 )dy ,
+0
+
+u parab ( y ) =
+
+4
+L 2y
+
+y (1 − y ).
+
+(40)
+
+To solve this problem in the PINNs framework, we deﬁne a second neural network for the control (inlet proﬁle) u i ( y ),
+consisting of 3 hidden layers of 30 neurons each, in addition to the network for u , v , p for which we keep the same
+architecture as before. We then train both networks simultaneously using the loss (6), starting from a new initialization
+of the parameters. We use the same training points as before, and evaluate the integral in the cost objective (35) using
+the midpoint rule at N J = 41 equally-spaced training points on the outﬂow boundary o . We use the scalar weights
+λru-mom = λrv-mom = λrcont = 1, w b = 100. We choose an initial learning rate of 10−3 and decrease it by a factor 10 after 100k
+and 200k epochs of training, for a total of 300k epochs. We repeat this procedure for 12 values of w J between 10−3 and
+105 .
+We implement the DAL procedure with the continuous adjoint formulation in the icoFoam solver of OpenFOAM, based
+on the adjoint NS equations and the gradient of the cost objective given in Appendix C. The adjoint equations are solved
+with the same numerical methods as the direct equations. The DAL optimal solution is obtained by iteratively solving the
+NS equations and their adjoint, updating the control u in ( y ) at each iteration with the gradient descent formula (19). We
+choose the parabolic velocity proﬁle u parab ( y ) as initial guess for the control u in ( y ) and employ a learning rate β = 0.001.
+Beginning with Step 1 of the line search strategy presented in Section 2.4, we visualize in Fig. 10(a) the two components
+LF /B and LJ of the loss (20) obtained at the end of training of the PINN optimal control solution, for each considered
+value of w J . Moving to Step 2 of the line search strategy, we report in Fig. 10(b) the cost objective value J obtained by
+a separate PINN solution of the corresponding forward problem, with ﬁxed control from the optimal solution obtained in
+Step 1, for each value of w J . We observe that the control solution obtained with w J = 30, shown by the red dot, yields
+the lowest J . It is therefore this optimal control solution that we analyze hereafter and compare with the DAL solution.
+The various loss components during training of the PINN optimal solution (for w J = 30) are displayed in Fig. 10(c),
+and the convergence of the cost objective during the DAL iterations is shown in Fig. 10(d). The PINN and DAL frameworks
+converge to rather different optimal inlet velocity proﬁles u ∗in ( y ), shown in Fig. 10(e). These proﬁles nonetheless share a
+few features: two local maxima near the centerline and around y = 0.8, as well as a region of negative velocity for y < 0.3.
+We evaluate the quality of these optimal inlet proﬁles by computing the corresponding ﬂow ﬁelds in two separate forward
+OpenFOAM calculations. The resulting outlet velocity proﬁles are displayed in Figs. 10(f) and compared with the target
+parabolic proﬁle u parab ( y ). Both optimal inlet proﬁles lead to near-parabolic outlet proﬁles with comparable cost values:
+J = 0.00278 and J = 0.00265 for the PINN and DAL inlet proﬁles, respectively. Yet, the PINN inlet velocity proﬁle is
+smoother and produces an outlet proﬁle that has a more parabolic shape than its DAL counterpart. Figs. 10(g,h,i,j) display
+the velocity magnitude, streamlines and pressure ﬁelds of the two OpenFOAM solutions calculated using the PINN and DAL
+optimal inlet proﬁles. In both cases, the bottom region of negative inlet velocity attracts some of the ﬂuid entering through
+the blowing boundary, which reduces the effect of the latter on the outlet proﬁle. The DAL inlet proﬁle has a second region
+of negative velocity around y = 0.6 and a much sharper peak near y = 0.4, but these features do not yield a noticeably
+lower cost objective.
+4. Discussion
+A major goal of the present study is to compare the pros and cons of the PINN and DAL frameworks for solving PDEconstrained optimal control problems, so that the novel PINN approach can be placed in the context of the mature ﬁeld
+of PDE-constrained optimization. To this end, in the previous section we have systematically compared the eﬃcacy of the
+two frameworks by looking at several examples with varying degrees of complexity. In all cases, both techniques returned
+optimal control solutions yielding a comparable objective cost when evaluated in a separate high-ﬁdelity numerical solver,
+which required an extra step in the PINN approach. The optimal control problem based on Laplace’s equation had a global
+analytical optimal solution, which was found by both methods. The three remaining examples had more complicated optimization landscapes due to the nonlinearity of their governing PDEs, which exposed some differences in the characteristics
+of the optimal control solutions found by PINNs and DAL. For the Burgers and Navier-Stokes equations, the optimal control
+distributions found by DAL yielded a lower cost objective but were less smooth than the ones obtained from PINNs. For the
+Kuramoto-Sivashinsky equation, whose optimal control problem was the classical scenario of driving the state towards an
+unstable ﬁxed point while penalizing large control magnitude, the two frameworks found remarkably close optimal control
+17
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+Fig. 10. Optimal solution of the Navier-Stokes control problem (39). (a) Components of the loss (20) obtained at the end of training of the PINN optimal
+control solution versus weight w J (step 1 of the line search strategy). (b) Cost objective estimate obtained by a separate PINN solution of the forward
+problem with ﬁxed control from the PINN optimal solution versus w J (step 2 of the line search strategy). The best optimal control, obtained with
+w J = 30, is shown by the red dot. (c) Convergence of the loss during training of the PINN optimal control solution (for w J = 30). (d) Convergence of the
+cost objective during DAL iterations. (e) Optimal inlet velocity proﬁles u ∗in obtained using the PINN (for w J = 30) and DAL frameworks. (f) Outlet velocity
+proﬁles of two forward OpenFOAM solutions calculated using the optimal inlet proﬁles u ∗in from the PINN (for w J = 30) and DAL frameworks, compared
+with the target parabolic proﬁle. (f,g,h,i) Velocity magnitude, streamlines and pressure ﬁelds of the OpenFOAM solutions calculated using the optimal inlet
+proﬁles u ∗in from the PINN (for w J = 30) and DAL frameworks.
+
+solutions yielding almost identical cost objective values. Such agreement is signiﬁcant given the engineering relevance of
+this control problem and the chaotic nature of the Kuramoto-Sivashinsky equation.
+Thus, these four examples suggest that the PINN approach can be similarly effective as DAL in solving optimal control
+problems. Clearly, an important advantage of the PINN framework is its ease of implementation, since it takes very little
+effort to adapt a PINN code for forward problems to the solution of optimal control problems. Furthermore, the PINN
+framework is very ﬂexible in terms of the type of governing equations, boundary conditions, geometries, and cost objective
+18
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+Table 1
+Computational time for obtaining the PINN and DAL optimal solutions. The PINN solutions are trained on
+one GPU in TensorFlow. The DAL solutions are all computed using a single CPU core, using the C++ ﬁnitevolume solver OpenFOAM for the Laplace and Navier-Stokes equations, and a spectral Python code for the
+Burgers and Kuramoto-Sivashinsky equations. Note that this table is not meant as a rigorous comparison of
+the computational eﬃciency of the two frameworks due to the number of differing factors involved.
+
+Laplace (Section 3.1)
+Burgers (Section 3.2)
+Kuramoto-Sivashinsky (Section 3.3)
+Navier-Stokes (Section 3.4)
+
+PINN
+
+DAL
+
+9 min (Tesla V100)
+19 min (Tesla V100)
+2 hours 4 min (Tesla V100)
+8 hours 20 min (Tesla V100)
+
+25 min (Xeon E5-2683)
+1 min (Core i7-4980HQ)
+2 hours 55 min (Core i7-4980HQ)
+28 hours (Xeon E5-2683)
+
+functions that it allows, which opens the door for a very large class of problems to be solved with little human effort. By
+contrast, the DAL approach involves the cumbersome manual derivation of the adjoint equation and cost objective gradient,
+which needs to be repeated after any mere change of boundary conditions or cost objective function. The adjoint equation
+and DAL iterative procedure then need to be implemented in a numerical solver, which is no small task when complicated
+governing PDEs and/or complex geometries are involved. There exists a discrete adjoint formulation that does not require
+deriving adjoint equations, as opposed to the continuous adjoint formulation that we have employed in this paper. However,
+the discrete adjoint approach necessitates the use of differentiable numerical solvers, which are not yet well established.
+Thus, the PINN framework brings optimal control problems within reach of a much wider audience compared with adjointbased approaches such as DAL.
+We close the discussion with a few remarks regarding the computational cost of the PINN and DAL approaches for solving
+optimal control problems. The PINNs literature often alludes to the potentially superior computational eﬃciency of PINNs for
+solving inverse problems compared to other approaches, but actual numbers are rarely given. Indeed, it is very diﬃcult to
+do an apples-to-apples comparison of the two frameworks due to the very different nature of their hardware requirements:
+PINNs are trained much faster on GPUs while the forward and adjoint equations in DAL are solved on CPUs. In addition, the
+computational cost of PINNs depends on many factors such as the machine learning library that is used, the optimization
+algorithm, and the neural network architecture. Likewise, the computational cost of DAL depends on other factors such as
+the discretization method and programming language employed to solve the forward and adjoint equations as well as the
+gradient descent algorithm. For instance, BFGS-type updates can be used to speed up the convergence of DAL. With that
+in mind, our goal is not to do a rigorous comparison of the PINN and DAL computational costs, but rather to provide the
+reader with an idea of what to expect, which is still valuable given the lack of such data in the literature. To this effect,
+we report in Table 1 the computational times required to obtain all the PINN and DAL optimal control solutions reported in
+the previous section. For the simpler problems based on the Laplace and Burgers equations, the DAL solution was obtained
+in much shorter time than the PINN solution.1 For the more complex problems based on the Kuramoto-Sivashinsky and
+Navier-Stokes equations, the situation reverses and the PINN solution is obtained in shorter time. This suggests that the
+computational eﬃciency of the PINN framework might close the gap with that of DAL as the problem complexity increases.
+There are, however, a few caveats to this picture to keep in mind. Importantly, all our DAL calculations are performed on
+a single CPU core, and could therefore beneﬁt from a substantial speedup if performed in a multi-threaded environment.
+Further, although both frameworks necessitate some amount of parameter tuning, the process is more involved for PINNs
+due to the number of parameters involved, even when following the guidelines presented in Section 2.4. Finally, algorithms
+other than DAL to solve the adjoint-based optimality equations exist, e.g. one-shot methods, that may result in overall
+computational cost of optimization comparable to that of a single forward simulation [34,56].
+5. Conclusions
+In this paper, we have proposed a methodology and a set of guidelines for solving optimal control problems with
+physics-informed neural networks (PINNs). We then compared rigorously optimal control solutions obtained from PINNs
+with corresponding results calculated with direct-adjoint-looping (DAL), a particular implementation of adjoint-based optimization which is the standard approach for solving PDE-constrained optimal control problems. The comparison was carried
+out over four examples with increasing complexity levels: the Laplace, Burgers, Kuramoto-Sivashinsky, and Navier-Stokes
+equations. In all cases, both techniques found optimal control solutions that yielded comparable cost objective values once
+plugged back into a high-ﬁdelity numerical solver, demonstrating the capability of PINNs to solve optimal control problems.
+Beyond the quality of the optimal control solutions, we also assessed the pros and cons of the two approaches. A major
+strength of the PINNs framework is its ﬂexibility and ease of implementation, which hold the potential to make optimal
+control problems more accessible to a much wider audience than adjoint-based methods. On the other hand, DAL is very
+time-consuming to carry out but can potentially return the optimal control solution at a smaller computational cost if the
+
+1
+Note that the DAL iterations for the Laplace solution were pushed to an extremely low value of the cost objective; a quarter of the iterations would
+have produced an optimal control of a similar quality to the PINN solution.
+
+19
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+solver is parallelized. This being said, the performance of the PINN framework may also be improved by using recent advances in the ﬁeld such as adaptive weighting of the various loss components [43,45] or adaptive reﬁnement of the residual
+points [14]. Finally, PINNs will automatically beneﬁt from the future advances of fast-evolving deep-learning tools, so their
+relevance for optimal control problems will only increase from now on.
+CRediT authorship contribution statement
+Saviz Mowlavi: Conceptualization, Methodology, Software, Writing – original draft, Writing – review & editing. Saleh
+Nabi: Conceptualization, Methodology, Software, Writing – original draft, Writing – review & editing.
+Declaration of competing interest
+The authors declare that they have no known competing ﬁnancial interests or personal relationships that could have
+appeared to inﬂuence the work reported in this paper.
+Data availability
+Upon acceptance of the paper, authors will do their best to get the permission to share the data/code.
+Appendix A. Adjoint Burgers equation
+Applying the methodology outlined in Section 2.3, one can derive the adjoint of the Burgers equation (28) as well as
+the gradient of the cost objective (31) with respect to the control. The adjoint Burgers equation, obtained from (16) using
+integration by part, is
+
+−
+
+∂λ
+∂λ
+∂ 2λ
+−u
+=ν 2,
+∂t
+∂x
+∂x
+
+(A.1)
+
+where λ(x, t ) is the adjoint ﬁeld and u (x, t ) is the forward ﬁeld that solves the Burgers equation (28) given the control
+(initial condition) u 0 (x). The adjoint equation is supplemented with periodic boundary conditions and the terminal condition
+λ(x, T ) = −u + ud . Finally, the total gradient of the cost objective with respect to the control u 0 (x), obtained from (18), is
+
+dJ (u )
+du 0
+
+= −λ(x, 0).
+
+(A.2)
+
+Appendix B. Adjoint Kuramoto-Sivashinsky equation
+Applying the methodology outlined in Section 2.3, one can derive the adjoint of the KS equation (32) as well as the
+gradient of the cost objective (35) with respect to the control. The adjoint KS equation, obtained from (16) using integration
+by part, is
+
+−
+
+∂λ
+∂λ ∂ 2 λ ∂ 4 λ
+−u
++ 2 + 4 = −u (x, t ),
+∂t
+∂x
+∂x
+∂x
+
+(B.1)
+
+where λ(x, t ) is the adjoint ﬁeld and u (x, t ) is the forward ﬁeld that solves the KS equation (32) given the control (forcing)
+f (x, t ). The adjoint equation is supplemented with periodic boundary conditions and the terminal condition λ(x, T ) = 0.
+Finally, the total gradient of the cost objective with respect to the control f (x, t ), obtained from (18), is
+
+dJ (u , f )
+df
+
+= 2σ f (x, t ) − λ(x, t ).
+
+(B.2)
+
+Appendix C. Adjoint Navier-Stokes equations
+In this appendix, we use Einstein notation so that the velocity ﬁeld deﬁned in Section 3.4 will be denoted u(x) =
+(u 1 (x1 , x2 ), u 2 (x1 , x2 )). The augmented objective functional, i.e. Lagrangian, corresponding to the control problem (39) is
+
+ 
+
+
+∂ ui u j
+∂u j
+∂ pi
+1 ∂ 2ui
++ , −
+,
+L = J + λi ,
++
+−
+∂xj
+∂ xi
+Re ∂ x2j
+∂xj
+
+(C.1)
+
+where λ = (λ1 (x1 , x2 ), λ2 (x1 , x2 )) and  are adjoint velocity and pressure ﬁelds, respectively, and the inner product ·, · is
+deﬁned as
+20
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+
+a, b =
+
+a(x)b(x)dV .
+
+(C.2)
+
+
+
+The variation of the Lagrangian is
+
+
+
+ 
+
+∂δ u j
+∂δ p i
+∂ ui
+∂δ u i
+1 ∂ 2δu j
+δ L = δ J + λi , δ u j
++uj
++
+−
++ , −
+.
+∂xj
+∂xj
+∂ xi
+Re ∂ x2j
+∂xj
+
+(C.3)
+
+For optimality δ L = 0 should be satisﬁed. Using vector calculus and integration by parts for each term, appropriate EulerLagrange equations can be derived. For instance,
+
+
+
+ 
+
+∂u j
+∂ ui
+λi , δ u j
+= δui , λ j
+,
+∂xj
+∂ xi
+
+
+
+ 
+∂δ u i
+∂λi
+λi , u j
+= − δui , u j
++ λi δ u i u j n j dS ,
+∂xj
+∂xj
+
+
+λi ,
+
+1 ∂ 2δui
+Re ∂ x2j
+
+
+
+(C.4a)
+(C.4b)
+
+∂
+
+
+ 
+
+
+1 ∂ 2 λi
+1
+∂λi
+∂δ u i
+n
+δ
+u
+−
+n
+λ
+= δui ,
++
+j
+i
+j
+i dS ,
+Re ∂ x2j
+Re
+∂xj
+∂xj
+
+(C.4c)
+
+∂
+
+and so on for the other terms. Here, n = (n1 , n2 ) is the normal unit vector of the surface. From the volumetric integrals, the
+adjoint equations are recovered as
+
+λj
+
+∂u j
+∂
+∂λi
+1 ∂ 2 λi
+−uj
+−
++
+= 0,
+∂ xi
+∂xj
+Re ∂ x2j
+∂ xi
+
+(C.5a)
+
+∂λ j
+= 0.
+∂xj
+
+(C.5b)
+
+Setting surface integrals to zero and decomposing these integrals into normal and tangential components, we obtain the
+corresponding boundary conditions for the adjoint velocity and pressure as
+
+λ1 = λ2 = 0, (n · ∇) = 0 on
+1 ∂λ2
+= −u 2 on
+u 1 λ2 +
+Re ∂ x1
+1 ∂λ1
+= u 1 − u parab +  on
+u 1 λ1 +
+Re ∂ x1
+
+i ∪
+
+b∪
+
+s∪
+
+w,
+
+(C.6a)
+
+o,
+
+(C.6b)
+
+o.
+
+(C.6c)
+
+Finally, the total gradient of the cost objective with respect to the control, or design equation, is given by
+
+dJ (u)
+du in
+
+= (0, x2 ) −
+
+1 ∂λ1
+Re ∂ x1
+
+(0, x2 ),
+
+(C.7)
+
+where all values are evaluated at the inlet. For more details, the reader is invited to refer to [29].
+References
+[1] Y. LeCun, Y. Bengio, G. Hinton, Deep learning, Nature 521 (7553) (2015) 436–444.
+[2] A. Krizhevsky, I. Sutskever, G.E. Hinton, Imagenet classiﬁcation with deep convolutional neural networks, Adv. Neural Inf. Process. Syst. 25 (2012)
+1097–1105.
+[3] G. Hinton, L. Deng, D. Yu, G.E. Dahl, A.-r. Mohamed, N. Jaitly, A. Senior, V. Vanhoucke, P. Nguyen, T.N. Sainath, et al., Deep neural networks for acoustic
+modeling in speech recognition: the shared views of four research groups, IEEE Signal Process. Mag. 29 (6) (2012) 82–97.
+[4] I. Sutskever, O. Vinyals, Q.V. Le, Sequence to sequence learning with neural networks, in: Advances in Neural Information Processing Systems, 2014,
+pp. 3104–3112.
+[5] J. Vamathevan, D. Clark, P. Czodrowski, I. Dunham, E. Ferran, G. Lee, B. Li, A. Madabhushi, P. Shah, M. Spitzer, et al., Applications of machine learning
+in drug discovery and development, Nat. Rev. Drug Discov. 18 (6) (2019) 463–477.
+[6] G.E. Karniadakis, I.G. Kevrekidis, L. Lu, P. Perdikaris, S. Wang, L. Yang, Physics-informed machine learning, Nat. Rev. Phys. 3 (6) (2021) 422–440.
+[7] M. Raissi, P. Perdikaris, G.E. Karniadakis, Physics-informed neural networks: a deep learning framework for solving forward and inverse problems
+involving nonlinear partial differential equations, J. Comput. Phys. 378 (2019) 686–707.
+[8] M. Dissanayake, N. Phan-Thien, Neural-network-based approximations for solving partial differential equations, Commun. Numer. Methods Eng. 10 (3)
+(1994) 195–201.
+[9] B.P. van Milligen, V. Tribaldos, J. Jiménez, Neural network differential equation and plasma equilibrium solver, Phys. Rev. Lett. 75 (20) (1995) 3594.
+[10] I.E. Lagaris, A. Likas, D.I. Fotiadis, Artiﬁcial neural networks for solving ordinary and partial differential equations, IEEE Trans. Neural Netw. 9 (5) (1998)
+987–1000.
+[11] M. Hayati, B. Karami, Feedforward neural network for solving partial differential equations, J. Appl. Sci. 7 (19) (2007) 2812–2817.
+[12] K. Hornik, M. Stinchcombe, H. White, Multilayer feedforward networks are universal approximators, Neural Netw. 2 (5) (1989) 359–366.
+21
+
+S. Mowlavi and S. Nabi
+
+Journal of Computational Physics 473 (2023) 111731
+
+[13] M. Leshno, V.Y. Lin, A. Pinkus, S. Schocken, Multilayer feedforward networks with a nonpolynomial activation function can approximate any function,
+Neural Netw. 6 (6) (1993) 861–867.
+[14] L. Lu, X. Meng, Z. Mao, G.E. Karniadakis, Deepxde: a deep learning library for solving differential equations, SIAM Rev. 63 (1) (2021) 208–228.
+[15] S. Cai, Z. Wang, S. Wang, P. Perdikaris, G.E. Karniadakis, Physics-informed neural networks for heat transfer problems, J. Heat Transf. 143 (6) (2021)
+060801.
+[16] M. Raissi, Z. Wang, M.S. Triantafyllou, G.E. Karniadakis, Deep learning of vortex-induced vibrations, J. Fluid Mech. 861 (2019) 119–137.
+[17] M. Raissi, A. Yazdani, G.E. Karniadakis, Hidden ﬂuid mechanics: learning velocity and pressure ﬁelds from ﬂow visualizations, Science 367 (6481)
+(2020) 1026–1030.
+[18] L. Sun, H. Gao, S. Pan, J.-X. Wang, Surrogate modeling for ﬂuid ﬂows based on physics-constrained deep learning without simulation data, Comput.
+Methods Appl. Mech. Eng. 361 (2020) 112732.
+[19] C. Rao, H. Sun, Y. Liu, Physics-informed deep learning for computational elastodynamics without labeled data, J. Eng. Mech. 147 (8) (2021) 04021043.
+[20] E. Haghighat, M. Raissi, A. Moure, H. Gomez, R. Juanes, A physics-informed deep learning framework for inversion and surrogate modeling in solid
+mechanics, Comput. Methods Appl. Mech. Eng. 379 (2021) 113741.
+[21] F. Sahli Costabal, Y. Yang, P. Perdikaris, D.E. Hurtado, E. Kuhl, Physics-informed neural networks for cardiac activation mapping, Front. Phys. 8 (2020)
+42.
+[22] R.L. van Herten, A. Chiribiri, M. Breeuwer, M. Veta, C.M. Scannell, Physics-informed neural networks for myocardial perfusion mri quantiﬁcation, arXiv
+preprint arXiv:2011.12844, 2020.
+[23] W. Ji, W. Qiu, Z. Shi, S. Pan, S. Deng, Stiff-pinn: physics-informed neural network for stiff chemical kinetics, J. Phys. Chem. A 125 (36) (2021) 8098–8106.
+[24] L. Yang, X. Meng, G.E. Karniadakis, B-pinns: Bayesian physics-informed neural networks for forward and inverse pde problems with noisy data, J.
+Comput. Phys. 425 (2021) 109913.
+[25] D. Zhang, L. Guo, G.E. Karniadakis, Learning in modal space: solving time-dependent stochastic pdes using physics-informed neural networks, SIAM J.
+Sci. Comput. 42 (2) (2020) A639–A665.
+[26] G. Pang, L. Lu, G.E. Karniadakis, fpinns: fractional physics-informed neural networks, SIAM J. Sci. Comput. 41 (4) (2019) A2603–A2626.
+[27] D.P. Foures, C.P. Caulﬁeld, P.J. Schmid, Optimal mixing in two-dimensional plane poiseuille ﬂow at ﬁnite péclet number, J. Fluid Mech. 748 (2014)
+241–277.
+[28] R. Kerswell, Nonlinear nonmodal stability theory, Annu. Rev. Fluid Mech. 50 (2018) 319–345.
+[29] S. Nabi, P. Grover, C. Caulﬁeld, Nonlinear optimal control strategies for buoyancy-driven ﬂows in the built environment, Comput. Fluids 194 (2019)
+104313.
+[30] Y. Deng, J.G. Korvink, Self-consistent adjoint analysis for topology optimization of electromagnetic waves, J. Comput. Phys. 361 (2018) 353–376.
+[31] E. Oktay, H. Akay, O. Merttopcuoglu, Parallelized structural topology optimization and cfd coupling for design of aircraft wing structures, Comput.
+Fluids 49 (1) (2011) 141–145.
+[32] S. Li, L. Petzold, Adjoint sensitivity analysis for time-dependent partial differential equations with adaptive mesh reﬁnement, J. Comput. Phys. 198 (1)
+(2004) 310–325.
+[33] F. Tröltzsch, Optimal Control of Partial Differential Equations: Theory, Methods, and Applications, vol. 112, American Mathematical Soc., 2010.
+[34] A. Borzì, V. Schulz, Computational Optimization of Systems Governed by Partial Differential Equations, SIAM, 2011.
+[35] J.-L. Lions, Optimal Control of Systems Governed by Partial Differential Equations, vol. 170, Springer Verlag, 1971.
+[36] L. Lu, R. Pestourie, W. Yao, Z. Wang, F. Verdugo, S.G. Johnson, Physics-informed neural networks with hard constraints for inverse design, arXiv preprint
+arXiv:2102.04626, 2021.
+[37] N. Demo, M. Strazzullo, G. Rozza, An extended physics informed neural network for preliminary analysis of parametric optimal control problems, arXiv
+preprint arXiv:2110.13530, 2021.
+[38] X. Glorot, Y. Bengio, Understanding the diﬃculty of training deep feedforward neural networks, in: Proceedings of the Thirteenth International Conference on Artiﬁcial Intelligence and Statistics, JMLR Workshop and Conference Proceedings, 2010, pp. 249–256.
+[39] D.P. Kingma, J. Ba Adam, A method for stochastic optimization, arXiv preprint arXiv:1412.6980, 2014.
+[40] S. Nabi, P. Grover, C.-c.P. Caulﬁeld, Adjoint-based optimization of displacement ventilation ﬂow, Build. Environ. 124 (2017) 342–356.
+[41] J. Nocedal, S. Wright, Numerical Optimization, Springer Science & Business Media, 2006.
+[42] A.S. Krishnapriyan, A. Gholami, S. Zhe, R.M. Kirby, M.W. Mahoney, Characterizing possible failure modes in physics-informed neural networks, arXiv
+preprint arXiv:2109.01050, 2021.
+[43] S. Wang, Y. Teng, P. Perdikaris, Understanding and mitigating gradient pathologies in physics-informed neural networks, arXiv preprint arXiv:2001.
+04536, 2020.
+[44] R. van der Meer, C. Oosterlee, A. Borovykh, Optimally weighted loss functions for solving pdes with neural networks, arXiv preprint arXiv:2002.06269,
+2020.
+[45] S. Maddu, D. Sturm, C.L. Müller, I.F. Sbalzarini, Inverse dirichlet weighting enables reliable training of physics informed neural networks, Mach. Learn.:
+Sci. Technol. 3 (1) (2022) 015026.
+[46] R. Bischof, M. Kraus, Multi-objective loss balancing for physics-informed deep learning, arXiv preprint arXiv:2110.09813, 2021.
+[47] S. Basir, I. Senocak, Physics and equality constrained artiﬁcial neural networks: application to partial differential equations, arXiv preprint arXiv:
+2109.14860, 2021.
+[48] S. Wang, M.A. Bhouri, P. Perdikaris, Fast pde-constrained optimization via self-supervised operator learning, arXiv preprint arXiv:2110.13297, 2021.
+[49] Z. Hao, C. Ying, H. Su, J. Zhu, J. Song, Z. Cheng, Bi-level physics-informed neural networks for pde constrained optimization using broyden’s hypergradients, arXiv preprint arXiv:2209.07075, 2022.
+[50] S. Cuomo, V.S. Di Cola, F. Giampaolo, G. Rozza, M. Raissi, F. Piccialli, Scientiﬁc machine learning through physics-informed neural networks: where we
+are and what’s next, arXiv preprint arXiv:2201.05624, 2022.
+[51] S.B. Hazra, V. Schulz, Simultaneous pseudo-timestepping for pde-model based optimization problems, BIT Numer. Math. 44 (3) (2004) 457–472.
+[52] P. Cvitanović, R.L. Davidchack, E. Siminos, On the state space geometry of the kuramoto–sivashinsky ﬂow in a periodic domain, SIAM J. Appl. Dyn. Syst.
+9 (1) (2010) 1–33.
+[53] OpenFOAM - the open source computational ﬂuid dynamics (cfd) toolbox, http://openfoam.com.
+[54] S.V. Patankar, D.B. Spalding, A calculation procedure for heat, mass and momentum transfer in three-dimensional parabolic ﬂows, Int. J. Heat Mass
+Transf. 15 (10) (1972) 1787–1806.
+[55] P.K. Sweby, High resolution schemes using ﬂux limiters for hyperbolic conservation laws, SIAM J. Numer. Anal. 21 (5) (1984) 995–1011.
+[56] T. Bosse, N.R. Gauger, A. Griewank, S. Günther, V. Schulz, One-shot approaches to design optimization, in: Trends in PDE Constrained Optimization,
+Springer, 2014, pp. 43–66.
+
+22
+
+
