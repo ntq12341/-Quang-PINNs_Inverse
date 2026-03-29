@@ -1,0 +1,11 @@
+index,run_path
+0,pinns_optimal_control\outputs\burgers\optimal_control\sweep_wj\wJ_1.000e-03\optimal_control_results
+1,pinns_optimal_control\outputs\burgers\optimal_control\sweep_wj\wJ_1.000e-02\optimal_control_results
+2,pinns_optimal_control\outputs\burgers\optimal_control\sweep_wj\wJ_1.000e-01\optimal_control_results
+3,pinns_optimal_control\outputs\burgers\optimal_control\sweep_wj\wJ_1.000e+00\optimal_control_results
+4,pinns_optimal_control\outputs\burgers\optimal_control\sweep_wj\wJ_1.000e+01\optimal_control_results
+5,pinns_optimal_control\outputs\burgers\optimal_control\sweep_wj\wJ_1.000e+02\optimal_control_results
+6,pinns_optimal_control\outputs\burgers\optimal_control\sweep_wj\wJ_1.000e+03\optimal_control_results
+7,pinns_optimal_control\outputs\burgers\optimal_control\sweep_wj\wJ_1.000e+04\optimal_control_results
+8,pinns_optimal_control\outputs\burgers\optimal_control\sweep_wj\wJ_1.000e+05\optimal_control_results
+9,pinns_optimal_control\outputs\burgers\optimal_control\sweep_wj\wJ_1.000e+06\optimal_control_results
