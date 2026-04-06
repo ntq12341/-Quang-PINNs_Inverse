@@ -26,12 +26,17 @@ def plot_fig4_forward(forward_dir: Path, out_png: Path) -> None:
     t = field[:, 1]
     u_true = field[:, 2]
     u_pred = field[:, 3]
-    n_x = len(np.unique(x))
-    n_t = len(np.unique(t))
-    xx = x.reshape(n_x, n_t)
-    tt = t.reshape(n_x, n_t)
-    u_true = u_true.reshape(n_x, n_t)
-    u_pred = u_pred.reshape(n_x, n_t)
+    x_unique = np.unique(x)
+    t_unique = np.unique(t)
+    n_x = len(x_unique)
+    n_t = len(t_unique)
+
+    # field_u.csv is flattened from a meshgrid created with indexing="xy",
+    # so the native array layout is (n_t, n_x): rows are time levels, columns are x points.
+    xx = x.reshape(n_t, n_x)
+    tt = t.reshape(n_t, n_x)
+    u_true = u_true.reshape(n_t, n_x)
+    u_pred = u_pred.reshape(n_t, n_x)
     err = np.abs(u_pred - u_true)
 
     fig, axs = plt.subplots(2, 3, figsize=(13, 7.5))
@@ -45,9 +50,9 @@ def plot_fig4_forward(forward_dir: Path, out_png: Path) -> None:
     axs[0, 1].semilogy(test[:, 0], test[:, 1], color="tab:red")
     axs[0, 1].set_title("(b) Relative L2 Test Error")
 
-    x_last = xx[:, -1]
-    axs[0, 2].plot(x_last, u_true[:, -1], label="Analytical")
-    axs[0, 2].plot(x_last, u_pred[:, -1], "--", label="PINN")
+    x_last = xx[-1, :]
+    axs[0, 2].plot(x_last, u_true[-1, :], label="Analytical")
+    axs[0, 2].plot(x_last, u_pred[-1, :], "--", label="PINN")
     axs[0, 2].set_title("(c) Final-Time Snapshot")
     axs[0, 2].legend(fontsize=8)
 
@@ -150,4 +155,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
