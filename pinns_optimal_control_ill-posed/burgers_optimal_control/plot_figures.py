@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,20 +15,6 @@ def _set_style() -> None:
 
 def _load_csv_2d(path: Path) -> np.ndarray:
     return np.atleast_2d(np.loadtxt(path, delimiter=",", skiprows=1))
-
-
-def _resolve_best_control_dir(control_dir: Path, sweep_dir: Path, explicit_control_dir: bool) -> Path:
-    if explicit_control_dir:
-        return control_dir
-    summary_path = sweep_dir / "summary.csv"
-    run_paths_path = sweep_dir / "run_paths.csv"
-    if not summary_path.exists() or not run_paths_path.exists():
-        return control_dir
-    sweep = _load_csv_2d(summary_path)
-    best = int(np.argmin(sweep[:, 5]))
-    run_paths = np.genfromtxt(run_paths_path, delimiter=",", skip_header=1, dtype=str)
-    run_paths = np.atleast_2d(run_paths)
-    return Path(run_paths[best, 1])
 
 
 def _reshape_field(table: np.ndarray, value_cols: list[int]) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
@@ -174,8 +159,6 @@ def main() -> None:
     outdir = Path(args.outdir)
     control_dir = Path(args.control_dir)
     sweep_dir = Path(args.sweep_dir)
-    explicit_control_dir = "--control-dir" in sys.argv
-    control_dir = _resolve_best_control_dir(control_dir, sweep_dir, explicit_control_dir)
     plot_overview(control_dir, outdir / "fig_burgers_optimal_overview.png")
     plot_lcurve(control_dir, outdir / "fig_burgers_alpha_lcurve.png")
     plot_wj_sweep(sweep_dir, outdir / "fig_burgers_wj_sweep.png")
