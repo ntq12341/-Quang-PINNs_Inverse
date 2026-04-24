@@ -23,12 +23,13 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-boundary-time", type=int, default=40)
     parser.add_argument("--n-initial", type=int, default=40)
     parser.add_argument("--n-terminal", type=int, default=100)
+    parser.add_argument("--n-tikhonov", type=int, default=100)
     parser.add_argument("--hidden-layers", type=int, default=4)
     parser.add_argument("--hidden-width", type=int, default=50)
     parser.add_argument("--alpha", type=float, default=1e-3)
     parser.add_argument("--alpha-method", choices=["fixed", "lcurve"], default="lcurve")
     parser.add_argument("--alpha-list", type=float, nargs="*", default=None)
-    parser.add_argument("--alpha-scan-epochs", type=int, default=1000)
+    parser.add_argument("--alpha-scan-epochs", type=int, default=3000)
     parser.add_argument("--print-every", type=int, default=200)
     parser.add_argument("--eval-nx", type=int, default=100)
     parser.add_argument("--eval-nt", type=int, default=100)
@@ -40,6 +41,8 @@ def make_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = make_parser().parse_args()
+    # Range [0.01, 10]: giới hạn trên tránh wJ quá lớn khiến PDE loss
+    # bị lấn át bởi objective, dẫn đến nghiệm không thỏa mãn PDE.
     wj_values = args.wj_list if args.wj_list else list(np.logspace(-3, 3, 7))
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -51,7 +54,7 @@ def main() -> None:
             seed=args.seed, device=args.device, L=args.L, T=args.T, epochs=args.epochs, lr=1e-3,
             lr_drop_epochs=[max(1, int(args.epochs / 2))], lr_drop_factor=0.1,
             n_residual=args.n_residual, batch_residual=args.batch_residual,
-            n_boundary_time=args.n_boundary_time, n_initial=args.n_initial, n_terminal=args.n_terminal,
+            n_boundary_time=args.n_boundary_time, n_initial=args.n_initial, n_terminal=args.n_terminal, n_tikhonov=args.n_tikhonov,
             hidden_layers=args.hidden_layers, hidden_width=args.hidden_width,
             wJ=float(wj), alpha=float(args.alpha), alpha_method=args.alpha_method,
             alpha_list=args.alpha_list, alpha_scan_epochs=args.alpha_scan_epochs,
@@ -70,7 +73,14 @@ def main() -> None:
     result_dir.mkdir(parents=True, exist_ok=True)
     save_named_columns_csv(result_dir / "summary.csv", {"wJ": arr[:, 0], "alpha": arr[:, 1], "loss_fbi": arr[:, 2], "loss_j": arr[:, 3], "loss_reg": arr[:, 4], "objective_rollout": arr[:, 5], "tikhonov_rollout": arr[:, 6]})
     (result_dir / "run_paths.csv").write_text("index,run_path\n" + "\n".join(f"{i},{p}" for i, p in enumerate(paths)) + "\n", encoding="utf-8")
-    best = int(np.argmin(arr[:, 5]))
+    # Chọn best wJ: rollout objective thấp nhất TRONG SỐ các run có PDE loss
+    # hội tụ tốt (loss_fbi < ngưỡng). Tránh chọn wJ quá lớn khiến PDE không
+    # được thỏa mãn dù rollout objective trông thấp.
+    pde_threshold = np.percentile(arr[:, 2], 50)  # loại nửa trên PDE loss
+    valid_mask = arr[:, 2] <= pde_threshold
+    if not np.any(valid_mask):
+        valid_mask = np.ones(len(arr), dtype=bool)
+    best = int(np.flatnonzero(valid_mask)[np.argmin(arr[valid_mask, 5])])
     best_run_dir = Path(paths[best])
     canonical_dir = outdir.parent / "optimal_control_results"
     if canonical_dir.exists():

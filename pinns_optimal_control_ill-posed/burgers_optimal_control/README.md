@@ -12,9 +12,10 @@ The target state is chosen analytically as:
 
 - `u_o(x,t) = 2 nu pi exp(-t) sin(pi x) / (2 + cos(pi x))`
 
-The terminal target is:
+The terminal target is the step function:
 
-- `g(x) = u_o(x,1)`
+- `g(x) = 0.5` for `x in [0.3, 0.7]`
+- `g(x) = 0` otherwise
 
 The true control is defined consistently by:
 

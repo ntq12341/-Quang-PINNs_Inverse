@@ -1,0 +1,4 @@
+index,run_path
+0,pinns_optimal_control_ill-posed\outputs\heat_optimal_control\no_reg_sweep_smoke\wJ_1.000e-01\optimal_control_results
+1,pinns_optimal_control_ill-posed\outputs\heat_optimal_control\no_reg_sweep_smoke\wJ_1.000e+00\optimal_control_results
+2,pinns_optimal_control_ill-posed\outputs\heat_optimal_control\no_reg_sweep_smoke\wJ_1.000e+01\optimal_control_results

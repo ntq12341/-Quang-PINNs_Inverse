@@ -81,8 +81,17 @@ def analytic_optimal_u(x: torch.Tensor, t: torch.Tensor, nu: float = 0.1) -> tor
     return 2.0 * nu * math.pi * expo * torch.sin(math.pi * x) / (2.0 + torch.cos(math.pi * x))
 
 
+def target_step_function(x: torch.Tensor) -> torch.Tensor:
+    """u_d(x) = 0.5 on [0.3, 0.7], and 0 elsewhere."""
+    return torch.where(
+        (x >= 0.3) & (x <= 0.7),
+        0.5 * torch.ones_like(x),
+        torch.zeros_like(x),
+    )
+
+
 def analytic_terminal_target(x: torch.Tensor, T: float = 1.0, nu: float = 0.1) -> torch.Tensor:
-    return analytic_optimal_u(x, torch.full_like(x, T), nu=nu)
+    return target_step_function(x)
 
 
 def analytic_optimal_f(x: torch.Tensor, t: torch.Tensor, nu: float = 0.1) -> torch.Tensor:

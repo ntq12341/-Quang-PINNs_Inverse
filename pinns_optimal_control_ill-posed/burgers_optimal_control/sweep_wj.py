@@ -24,6 +24,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-boundary-time", type=int, default=40)
     parser.add_argument("--n-initial", type=int, default=40)
     parser.add_argument("--n-terminal", type=int, default=100)
+    parser.add_argument("--n-tikhonov", type=int, default=100)
     parser.add_argument("--hidden-layers", type=int, default=4)
     parser.add_argument("--hidden-width", type=int, default=50)
     parser.add_argument("--alpha", type=float, default=1e-3)
@@ -50,9 +51,9 @@ def main() -> None:
         run_dir = outdir / f"wJ_{wj:.3e}"
         run_args = argparse.Namespace(
             seed=args.seed, device=args.device, L=args.L, T=args.T, nu=args.nu, epochs=args.epochs, lr=1e-3,
-            lr_drop_epochs=[10000 if args.epochs >= 10000 else max(1, int(args.epochs / 2))], lr_drop_factor=0.1,
+            lr_drop_epochs=[max(1, int(args.epochs / 2))], lr_drop_factor=0.1,
             n_residual=args.n_residual, batch_residual=args.batch_residual,
-            n_boundary_time=args.n_boundary_time, n_initial=args.n_initial, n_terminal=args.n_terminal,
+            n_boundary_time=args.n_boundary_time, n_initial=args.n_initial, n_terminal=args.n_terminal, n_tikhonov=args.n_tikhonov,
             hidden_layers=args.hidden_layers, hidden_width=args.hidden_width,
             wJ=float(wj), alpha=float(args.alpha), alpha_method=args.alpha_method,
             alpha_list=args.alpha_list, alpha_scan_epochs=args.alpha_scan_epochs,
@@ -71,7 +72,14 @@ def main() -> None:
     result_dir.mkdir(parents=True, exist_ok=True)
     save_named_columns_csv(result_dir / "summary.csv", {"wJ": arr[:, 0], "alpha": arr[:, 1], "loss_fbi": arr[:, 2], "loss_j": arr[:, 3], "loss_reg": arr[:, 4], "objective_rollout": arr[:, 5], "tikhonov_rollout": arr[:, 6]})
     (result_dir / "run_paths.csv").write_text("index,run_path\n" + "\n".join(f"{i},{p}" for i, p in enumerate(paths)) + "\n", encoding="utf-8")
-    best = int(np.argmin(arr[:, 5]))
+    # Prefer runs that keep the PDE side under control, then among those choose
+    # the smallest rollout objective. This avoids selecting wJ values that win
+    # on the terminal objective while badly violating the state equation.
+    pde_threshold = np.percentile(arr[:, 2], 50)
+    valid_mask = arr[:, 2] <= pde_threshold
+    if not np.any(valid_mask):
+        valid_mask = np.ones(len(arr), dtype=bool)
+    best = int(np.flatnonzero(valid_mask)[np.argmin(arr[valid_mask, 5])])
     best_run_dir = Path(paths[best])
     canonical_dir = outdir.parent / "optimal_control_results"
     if canonical_dir.exists():

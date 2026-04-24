@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -24,59 +25,209 @@ def _reshape_field(table: np.ndarray, value_cols: list[int]) -> tuple[np.ndarray
     t_unique = np.unique(t)
     n_x = len(x_unique)
     n_t = len(t_unique)
-    xx = x.reshape(n_t, n_x)
-    tt = t.reshape(n_t, n_x)
-    values = [table[:, col].reshape(n_t, n_x) for col in value_cols]
+    x_index = {float(val): idx for idx, val in enumerate(x_unique)}
+    t_index = {float(val): idx for idx, val in enumerate(t_unique)}
+    xx, tt = np.meshgrid(x_unique, t_unique, indexing="xy")
+    values = [np.full((n_t, n_x), np.nan, dtype=np.float64) for _ in value_cols]
+    for row in table:
+        i = t_index[float(row[1])]
+        j = x_index[float(row[0])]
+        for grid, col in zip(values, value_cols):
+            grid[i, j] = row[col]
     return xx, tt, values
 
 
-def plot_overview(control_dir: Path, out_png: Path) -> None:
+def _best_rollout_control_dir(sweep_dir: Path, fallback: Path, objective_col: int = 5) -> Path:
+    summary_path = sweep_dir / "summary.csv"
+    run_paths_path = sweep_dir / "run_paths.csv"
+    if not summary_path.exists() or not run_paths_path.exists():
+        return fallback
+    try:
+        sweep = _load_csv_2d(summary_path)
+        if sweep.shape[1] <= objective_col:
+            return fallback
+        best = int(np.argmin(sweep[:, objective_col]))
+        lines = run_paths_path.read_text(encoding="utf-8").strip().splitlines()[1:]
+        if best >= len(lines):
+            return fallback
+        _, run_path = lines[best].split(",", 1)
+        candidate = Path(run_path.strip())
+        return candidate if candidate.exists() else fallback
+    except Exception:
+        return fallback
+
+
+def plot_overview(control_dir: Path, sweep_dir: Path, out_png: Path) -> None:
     field_u = _load_csv_2d(control_dir / "field_u.csv")
     field_f = _load_csv_2d(control_dir / "control_f.csv")
     loss = _load_csv_2d(control_dir / "loss_history.csv")
-    term = _load_csv_2d(control_dir / "terminal_state.csv")
-    roll_term = _load_csv_2d(control_dir / "rollout_terminal_state.csv")
+    rollout_best_dir = _best_rollout_control_dir(sweep_dir, control_dir)
+    term = _load_csv_2d(rollout_best_dir / "terminal_state.csv")
+    roll_term = _load_csv_2d(rollout_best_dir / "rollout_terminal_state.csv")
+    no_reg_control_dir = control_dir.parent / "no_reg" / "sweep_wj" / "optimal_control_results"
+    no_reg_sweep_dir = control_dir.parent / "no_reg" / "sweep_wj" / "sweep_wj_results"
+    no_reg_rollout_best_dir = _best_rollout_control_dir(no_reg_sweep_dir, no_reg_control_dir, objective_col=3)
+    sweep_summary = _load_csv_2d(sweep_dir / "summary.csv") if (sweep_dir / "summary.csv").exists() else None
+
     xx_u, tt_u, u_vals = _reshape_field(field_u, [2, 3, 4])
     u_true, u_pred, u_err = u_vals
     xx_f, tt_f, f_vals = _reshape_field(field_f, [2, 3, 4])
     f_true, f_pred, f_err = f_vals
-    fig, axs = plt.subplots(3, 3, figsize=(14, 10))
-    axs[0, 0].semilogy(loss[:, 0], loss[:, 2], label="PDE")
-    axs[0, 0].semilogy(loss[:, 0], loss[:, 3], label="BC")
-    axs[0, 0].semilogy(loss[:, 0], loss[:, 4], label="IC")
-    axs[0, 0].set_title("(a) PDE/BC/IC Loss")
-    axs[0, 0].legend(fontsize=8)
-    axs[0, 1].semilogy(loss[:, 0], loss[:, 5], label="J")
-    axs[0, 1].semilogy(loss[:, 0], loss[:, 6], label="H1")
-    axs[0, 1].set_title("(b) Objective/Regularization")
-    axs[0, 1].legend(fontsize=8)
-    axs[0, 2].plot(term[:, 0], term[:, 1], color="black", lw=2.2, label="target")
-    axs[0, 2].plot(term[:, 0], term[:, 2], color="tab:orange", lw=1.8, ls="--", label="PINN")
-    axs[0, 2].plot(roll_term[:, 0], roll_term[:, 2], color="tab:green", lw=1.8, ls="-.", label="rollout")
-    axs[0, 2].set_title("(c) Terminal State")
-    axs[0, 2].legend(fontsize=8)
-    c = axs[1, 0].contourf(xx_u, tt_u, u_true, levels=40, cmap="viridis")
-    axs[1, 0].set_title("(d) True State $u^*$")
-    fig.colorbar(c, ax=axs[1, 0])
-    c = axs[1, 1].contourf(xx_u, tt_u, u_pred, levels=40, cmap="viridis")
-    axs[1, 1].set_title("(e) PINN State")
-    fig.colorbar(c, ax=axs[1, 1])
-    c = axs[1, 2].contourf(xx_u, tt_u, u_err, levels=40, cmap="magma")
-    axs[1, 2].set_title("(f) State Error")
-    fig.colorbar(c, ax=axs[1, 2])
-    c = axs[2, 0].contourf(xx_f, tt_f, f_true, levels=40, cmap="coolwarm")
-    axs[2, 0].set_title("(g) True Control $f^*$")
-    fig.colorbar(c, ax=axs[2, 0])
-    c = axs[2, 1].contourf(xx_f, tt_f, f_pred, levels=40, cmap="coolwarm")
-    axs[2, 1].set_title("(h) PINN Control")
-    fig.colorbar(c, ax=axs[2, 1])
-    c = axs[2, 2].contourf(xx_f, tt_f, f_err, levels=40, cmap="magma")
-    axs[2, 2].set_title("(i) Control Error")
-    fig.colorbar(c, ax=axs[2, 2])
-    for ax in (axs[1, 0], axs[1, 1], axs[1, 2], axs[2, 0], axs[2, 1], axs[2, 2]):
-        ax.set_xlabel("x")
-        ax.set_ylabel("t")
-    fig.subplots_adjust(wspace=0.30, hspace=0.28)
+    f_term_x = xx_f[-1]
+    f_term_pred = f_pred[-1]
+    f_term_no_reg = None
+    no_reg_term = None
+    no_reg_roll_term = None
+    if (no_reg_control_dir / "control_f.csv").exists():
+        field_f_no_reg = _load_csv_2d(no_reg_control_dir / "control_f.csv")
+        xx_f_no_reg, _, f_vals_no_reg = _reshape_field(field_f_no_reg, [2, 3, 4])
+        f_term_no_reg = f_vals_no_reg[1][-1]
+        f_term_x = xx_f_no_reg[-1]
+    if (no_reg_rollout_best_dir / "terminal_state.csv").exists() and (no_reg_rollout_best_dir / "rollout_terminal_state.csv").exists():
+        no_reg_term = _load_csv_2d(no_reg_rollout_best_dir / "terminal_state.csv")
+        no_reg_roll_term = _load_csv_2d(no_reg_rollout_best_dir / "rollout_terminal_state.csv")
+
+    # Recompute the rollout field from the plotted control so panel (e) is
+    # consistent with panel (b), which already shows the rollout terminal state.
+    from core import BurgersForwardSolver
+
+    x_eval = xx_f[0]
+    t_eval = tt_f[:, 0]
+    solver = BurgersForwardSolver(nx=len(x_eval) + 2, nt=max(len(t_eval) - 1, 1), L=1.0, T=1.0, nu=0.1)
+    forcing = np.zeros((solver.nt + 1, solver.nx), dtype=np.float64)
+    for n in range(solver.nt + 1):
+        src_idx = min(n, len(t_eval) - 1)
+        forcing[n] = np.interp(solver.x, x_eval, f_pred[src_idx])
+    states_roll = solver.rollout(forcing=forcing)
+    u_roll_interp = np.empty_like(u_pred)
+    for n, _ in enumerate(t_eval):
+        idx = min(n, solver.nt)
+        u_roll_interp[n] = np.interp(x_eval, solver.x, states_roll[idx])
+    u_ref_err = np.abs(u_true - u_pred)
+
+    fig = plt.figure(figsize=(17, 15))
+    gs = fig.add_gridspec(5, 6, hspace=0.55, wspace=0.55, height_ratios=[1.25, 1.25, 0.27, 0.27, 0.27])
+
+    ax_loss = fig.add_subplot(gs[0, :2])
+    ax_term = fig.add_subplot(gs[0, 2:4])
+    ax_term_no_reg = fig.add_subplot(gs[0, 4:])
+    ax_ctrl = fig.add_subplot(gs[1, :2])
+    ax_lcurve = fig.add_subplot(gs[1, 2:4])
+    ax_wj = fig.add_subplot(gs[1, 4:])
+    ax_u_true = fig.add_subplot(gs[2:5, :2])
+    ax_u_pred = fig.add_subplot(gs[2:5, 2:4])
+    ax_u_err = fig.add_subplot(gs[2:5, 4:])
+
+    ax_loss.semilogy(loss[:, 0], loss[:, 2], label="PDE")
+    ax_loss.semilogy(loss[:, 0], loss[:, 3], label="BC")
+    ax_loss.semilogy(loss[:, 0], loss[:, 4], label="IC")
+    ax_loss.semilogy(loss[:, 0], loss[:, 5], label="J")
+    if loss.shape[1] >= 7:
+        ax_loss.semilogy(loss[:, 0], loss[:, 6], label="H1")
+    ax_loss.set_title("(a) Loss History")
+    ax_loss.set_xlabel("epoch")
+    ax_loss.legend(fontsize=8, ncol=2)
+
+    ax_term.plot(term[:, 0], term[:, 1], color="black", lw=2.2, label="target")
+    ax_term.plot(
+        term[:, 0],
+        term[:, 2],
+        color="tab:orange",
+        lw=1.8,
+        ls="-.",
+        label="PINN",
+    )
+    ax_term.plot(
+        roll_term[:, 0],
+        roll_term[:, 2],
+        color="tab:blue",
+        lw=2.0,
+        ls="--",
+        label="rollout",
+    )
+    ax_term.set_title("(b) Terminal State + Rollout")
+    ax_term.set_xlabel("x")
+    ax_term.legend(fontsize=8)
+
+    if no_reg_term is not None and no_reg_roll_term is not None:
+        ax_term_no_reg.plot(no_reg_term[:, 0], no_reg_term[:, 1], color="black", lw=2.2, label="target")
+        ax_term_no_reg.plot(
+            no_reg_term[:, 0],
+            no_reg_term[:, 2],
+            color="tab:orange",
+            lw=1.8,
+            ls="-.",
+            label="PINN",
+        )
+        ax_term_no_reg.plot(
+            no_reg_roll_term[:, 0],
+            no_reg_roll_term[:, 2],
+            color="tab:blue",
+            lw=2.0,
+            ls="--",
+            label="rollout",
+        )
+        ax_term_no_reg.legend(fontsize=8)
+    else:
+        ax_term_no_reg.text(0.08, 0.5, "Missing no_reg terminal outputs", fontsize=12)
+    ax_term_no_reg.set_title("(c) No-Reg Terminal State + Rollout")
+    ax_term_no_reg.set_xlabel("x")
+
+    ax_ctrl.plot(f_term_x, f_term_pred, color="tab:red", lw=1.8, ls="--", label="with Tikhonov")
+    if f_term_no_reg is not None:
+        ax_ctrl.plot(f_term_x, f_term_no_reg, color="tab:blue", lw=1.6, ls="-.", label="no Tikhonov")
+    else:
+        ax_ctrl.text(0.04, 0.90, "missing no_reg output", transform=ax_ctrl.transAxes, fontsize=9)
+    ax_ctrl.set_title("(d) Control Comparison (With vs. Without Tikhonov)")
+    ax_ctrl.set_xlabel("x")
+    ax_ctrl.legend(fontsize=8)
+
+    lcurve_path = control_dir / "alpha_lcurve.csv"
+    if lcurve_path.exists():
+        table = _load_csv_2d(lcurve_path)
+        alpha = table[:, 0]
+        residual = table[:, 1]
+        regularization = table[:, 2]
+        summary = _load_csv_2d(control_dir / "summary.csv")
+        alpha_star = float(summary[0, 1]) if summary.shape[1] > 1 else alpha[np.argmin(residual)]
+        idx = int(np.argmin(np.abs(alpha - alpha_star)))
+        ax_lcurve.loglog(residual, regularization, "b.-", lw=1.4, label="L-curve")
+        ax_lcurve.loglog(residual[idx], regularization[idx], "ro", ms=8, label=rf"$\alpha^*={alpha_star:.2e}$")
+        ax_lcurve.legend(fontsize=8)
+    else:
+        ax_lcurve.text(0.12, 0.5, "Missing alpha_lcurve.csv", fontsize=12)
+    ax_lcurve.set_title("(e) L-curve")
+    ax_lcurve.set_xlabel("Residual norm")
+    ax_lcurve.set_ylabel("H1 norm")
+
+    if sweep_summary is not None and sweep_summary.shape[1] >= 6:
+        best = int(np.argmin(sweep_summary[:, 5]))
+        ax_wj.semilogx(sweep_summary[:, 0], sweep_summary[:, 5], marker="o", label="rollout objective")
+        ax_wj.scatter([sweep_summary[best, 0]], [sweep_summary[best, 5]], color="red", zorder=3, label="best")
+        ax_wj.legend(fontsize=8)
+    else:
+        ax_wj.text(0.10, 0.5, "Missing sweep_wj summary.csv", fontsize=12)
+    ax_wj.set_title(r"(f) Rollout Objective vs $w_J$")
+    ax_wj.set_xlabel(r"$w_J$")
+
+    c = ax_u_true.contourf(xx_u, tt_u, u_true, levels=40, cmap="viridis")
+    ax_u_true.set_title(r"(g) Reference State $u^*$")
+    ax_u_true.set_xlabel("x")
+    ax_u_true.set_ylabel("t")
+    fig.colorbar(c, ax=ax_u_true)
+
+    c = ax_u_pred.contourf(xx_u, tt_u, u_pred, levels=40, cmap="viridis")
+    ax_u_pred.set_title("(h) PINN State")
+    ax_u_pred.set_xlabel("x")
+    ax_u_pred.set_ylabel("t")
+    fig.colorbar(c, ax=ax_u_pred)
+
+    c = ax_u_err.contourf(xx_u, tt_u, u_ref_err, levels=40, cmap="magma")
+    ax_u_err.set_title(r"(i) Reference vs. PINN Error")
+    ax_u_err.set_xlabel("x")
+    ax_u_err.set_ylabel("t")
+    fig.colorbar(c, ax=ax_u_err)
+
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png, bbox_inches="tight")
     plt.close(fig)
@@ -99,7 +250,11 @@ def plot_wj_sweep(sweep_dir: Path, out_png: Path) -> None:
     axs[0].loglog(sweep[:, 0], sweep[:, 4], marker="^", label=r"$L_{H^1}$")
     axs[0].set_title("(a) Loss Terms vs $w_J$")
     axs[0].legend(fontsize=8)
-    best = int(np.argmin(sweep[:, 5]))
+    pde_threshold = np.percentile(sweep[:, 2], 50)
+    valid_mask = sweep[:, 2] <= pde_threshold
+    if not np.any(valid_mask):
+        valid_mask = np.ones(len(sweep), dtype=bool)
+    best = int(np.flatnonzero(valid_mask)[np.argmin(sweep[valid_mask, 5])])
     axs[1].semilogx(sweep[:, 0], sweep[:, 5], marker="o", label="rollout objective")
     axs[1].scatter([sweep[best, 0]], [sweep[best, 5]], color="red", zorder=3, label="best")
     axs[1].set_title("(b) Rollout Objective")
@@ -159,7 +314,7 @@ def main() -> None:
     outdir = Path(args.outdir)
     control_dir = Path(args.control_dir)
     sweep_dir = Path(args.sweep_dir)
-    plot_overview(control_dir, outdir / "fig_burgers_optimal_overview.png")
+    plot_overview(control_dir, sweep_dir, outdir / "fig_burgers_optimal_overview.png")
     plot_lcurve(control_dir, outdir / "fig_burgers_alpha_lcurve.png")
     plot_wj_sweep(sweep_dir, outdir / "fig_burgers_wj_sweep.png")
     print(f"Using control results from: {control_dir}")

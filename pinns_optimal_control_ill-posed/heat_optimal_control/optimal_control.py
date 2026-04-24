@@ -47,6 +47,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-boundary-time", type=int, default=40)
     parser.add_argument("--n-initial", type=int, default=40)
     parser.add_argument("--n-terminal", type=int, default=100)
+    parser.add_argument("--n-tikhonov", type=int, default=100)
     parser.add_argument("--hidden-layers", type=int, default=4)
     parser.add_argument("--hidden-width", type=int, default=50)
     parser.add_argument("--wJ", type=float, default=1.0)
@@ -72,6 +73,9 @@ def as_tensor(arr: np.ndarray, device: torch.device, requires_grad: bool = False
 def _build_training_sets(args: argparse.Namespace, device: torch.device) -> dict[str, torch.Tensor]:
     xt_r = lhs_2d(args.n_residual, low=(0.0, 0.0), high=(args.L, args.T), seed=args.seed)
     xt_r_t = as_tensor(xt_r, device=device, requires_grad=True)
+    tik_seed = None if args.seed is None else args.seed + 1
+    xt_tik = lhs_2d(args.n_tikhonov, low=(0.0, 0.0), high=(args.L, args.T), seed=tik_seed)
+    xt_tik_t = as_tensor(xt_tik, device=device, requires_grad=True)
     t_b = np.linspace(0.0, args.T, args.n_boundary_time, dtype=np.float32).reshape(-1, 1)
     xt_left = np.concatenate([np.zeros_like(t_b), t_b], axis=1)
     xt_right = np.concatenate([args.L * np.ones_like(t_b), t_b], axis=1)
@@ -81,6 +85,7 @@ def _build_training_sets(args: argparse.Namespace, device: torch.device) -> dict
     xt_terminal = np.concatenate([x_terminal, args.T * np.ones_like(x_terminal)], axis=1)
     return {
         "xt_r": xt_r_t,
+        "xt_tik": xt_tik_t,
         "left": as_tensor(xt_left, device=device, requires_grad=False),
         "right": as_tensor(xt_right, device=device, requires_grad=False),
         "init": as_tensor(xt0, device=device, requires_grad=False),
@@ -100,6 +105,7 @@ def _compute_batch_losses(
     u_net: NormalizedMLP,
     f_net: NormalizedMLP,
     xt_batch: torch.Tensor,
+    xt_tik: torch.Tensor,
     left_t: torch.Tensor,
     right_t: torch.Tensor,
     init_t: torch.Tensor,
@@ -115,10 +121,11 @@ def _compute_batch_losses(
     u_terminal = u_net(terminal_t)
     terminal_target = analytic_terminal_target(terminal_t[:, :1])
     objective_loss = 0.5 * args.L * torch.mean((u_terminal - terminal_target) ** 2)
-    grad_f = gradients(f_r, xt_batch, order=1)
+    f_tik = f_net(xt_tik)
+    grad_f = gradients(f_tik, xt_tik, order=1)
     f_x = grad_f[:, :1]
     f_t = grad_f[:, 1:2]
-    reg_loss = 0.5 * args.L * args.T * torch.mean(f_r**2 + f_x**2 + f_t**2)
+    reg_loss = 0.5 * args.L * args.T * torch.mean(f_tik**2 + f_x**2 + f_t**2)
     total = pde_loss + bc_loss + ic_loss + args.wJ * objective_loss + alpha * reg_loss
     return total, {
         "pde": pde_loss,
@@ -148,7 +155,9 @@ def _train_once(args: argparse.Namespace, alpha: float, epochs: int, print_every
             ids = perm[k * args.batch_residual : (k + 1) * args.batch_residual]
             xt_batch = data["xt_r"][ids]
             xt_batch.requires_grad_(True)
-            total_loss, losses = _compute_batch_losses(u_net, f_net, xt_batch, data["left"], data["right"], data["init"], data["terminal"], args, alpha)
+            xt_tik = data["xt_tik"]
+            xt_tik.requires_grad_(True)
+            total_loss, losses = _compute_batch_losses(u_net, f_net, xt_batch, xt_tik, data["left"], data["right"], data["init"], data["terminal"], args, alpha)
             opt.zero_grad()
             total_loss.backward()
             opt.step()
@@ -172,12 +181,17 @@ def _train_once(args: argparse.Namespace, alpha: float, epochs: int, print_every
 
 
 def l_curve_method(args: argparse.Namespace) -> tuple[float, list[dict[str, float]]]:
-    alpha_values = args.alpha_list if args.alpha_list else list(np.logspace(-6, 0, 9))
+    # Wider range and more points for harder targets; objective excluded from
+    # residual so that the PDE-constraint side of the L-curve is not dominated
+    # by the terminal mismatch term (which scales with wJ and is independent of α).
+    alpha_values = args.alpha_list if args.alpha_list else list(np.logspace(-6, 1, 17))
     results: list[dict[str, float]] = []
     for alpha in alpha_values:
         run_args = copy.deepcopy(args)
         _, _, history = _train_once(run_args, float(alpha), args.alpha_scan_epochs, print_every=max(args.alpha_scan_epochs + 1, 10))
-        residual_sq = history.pde[-1] + history.bc[-1] + history.ic[-1] + history.objective[-1]
+        # Use only PDE/BC/IC residuals — NOT the objective — so the L-curve
+        # reflects the regularization trade-off and not the wJ scaling.
+        residual_sq = history.pde[-1] + history.bc[-1] + history.ic[-1]
         residual = math.sqrt(max(residual_sq, 1e-16))
         reg = math.sqrt(max(history.regularization[-1], 1e-16))
         results.append({"alpha": float(alpha), "residual": residual, "regularization": reg})
@@ -224,7 +238,8 @@ def evaluate_and_save(u_net: NormalizedMLP, f_net: NormalizedMLP, history: Optim
     with torch.no_grad():
         f_roll = f_net(xt_roll).reshape(xx_roll.shape).detach().cpu().numpy()
     states_roll = solver.rollout(forcing=f_roll)
-    terminal_target_np = 2.0 * np.sin(solver.x)
+    solver_x_t = torch.tensor(solver.x, dtype=torch.float32, device=device).reshape(-1, 1)
+    terminal_target_np = analytic_terminal_target(solver_x_t).detach().cpu().numpy().reshape(-1)
     objective_roll = solver.terminal_objective(states_roll[-1], terminal_target_np)
     h1_roll = solver.h1_control_norm(f_roll)
     tikhonov_roll = objective_roll + alpha * h1_roll

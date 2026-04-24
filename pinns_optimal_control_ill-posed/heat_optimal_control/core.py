@@ -72,7 +72,11 @@ def analytic_initial_condition(x: torch.Tensor) -> torch.Tensor:
 
 
 def analytic_terminal_target(x: torch.Tensor) -> torch.Tensor:
-    return 2.0 * torch.sin(x)
+    return torch.where(
+        (x >= torch.pi / 3) & (x <= 2 * torch.pi / 3),
+        torch.ones_like(x),
+        torch.zeros_like(x)
+    )
 
 
 def analytic_optimal_u(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
@@ -177,7 +181,11 @@ class HeatForwardSolver:
         return states
 
     def terminal_objective(self, terminal_state: np.ndarray, target: np.ndarray | None = None) -> float:
-        target_vec = 2.0 * np.sin(self.x) if target is None else np.asarray(target, dtype=np.float64)
+        if target is None:
+            x_t = torch.tensor(self.x, dtype=torch.float32).reshape(-1, 1)
+            target_vec = analytic_terminal_target(x_t).detach().cpu().numpy().reshape(-1)
+        else:
+            target_vec = np.asarray(target, dtype=np.float64)
         diff = np.asarray(terminal_state, dtype=np.float64) - target_vec
         return 0.5 * self.dx * float(np.sum(diff**2))
 
