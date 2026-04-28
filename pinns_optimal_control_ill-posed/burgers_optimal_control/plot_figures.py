@@ -69,8 +69,11 @@ def plot_overview(control_dir: Path, sweep_dir: Path, out_png: Path) -> None:
     no_reg_rollout_best_dir = _best_rollout_control_dir(no_reg_sweep_dir, no_reg_control_dir, objective_col=3)
     sweep_summary = _load_csv_2d(sweep_dir / "summary.csv") if (sweep_dir / "summary.csv").exists() else None
 
-    xx_u, tt_u, u_vals = _reshape_field(field_u, [2, 3, 4])
-    u_true, u_pred, u_err = u_vals
+    has_u_rollout = field_u.shape[1] >= 6
+    u_value_cols = [2, 3, 4, 5] if has_u_rollout else [2, 3, 4]
+    xx_u, tt_u, u_vals = _reshape_field(field_u, u_value_cols)
+    u_true, u_pred, u_err = u_vals[:3]
+    u_roll_saved = u_vals[3] if has_u_rollout else None
     xx_f, tt_f, f_vals = _reshape_field(field_f, [2, 3, 4])
     f_true, f_pred, f_err = f_vals
     f_term_x = xx_f[-1]
@@ -104,6 +107,7 @@ def plot_overview(control_dir: Path, sweep_dir: Path, out_png: Path) -> None:
         idx = min(n, solver.nt)
         u_roll_interp[n] = np.interp(x_eval, solver.x, states_roll[idx])
     u_ref_err = np.abs(u_true - u_pred)
+    u_panel_err = np.abs(u_roll_saved - u_pred) if u_roll_saved is not None else u_ref_err
 
     fig = plt.figure(figsize=(17, 15))
     gs = fig.add_gridspec(5, 6, hspace=0.55, wspace=0.55, height_ratios=[1.25, 1.25, 0.27, 0.27, 0.27])
@@ -210,8 +214,9 @@ def plot_overview(control_dir: Path, sweep_dir: Path, out_png: Path) -> None:
     ax_wj.set_title(r"(f) Rollout Objective vs $w_J$")
     ax_wj.set_xlabel(r"$w_J$")
 
-    c = ax_u_true.contourf(xx_u, tt_u, u_true, levels=40, cmap="viridis")
-    ax_u_true.set_title(r"(g) Reference State $u^*$")
+    u_panel_g = u_roll_saved if u_roll_saved is not None else u_true
+    c = ax_u_true.contourf(xx_u, tt_u, u_panel_g, levels=40, cmap="viridis")
+    ax_u_true.set_title("(g) Rollout State" if u_roll_saved is not None else r"(g) Reference State $u^*$")
     ax_u_true.set_xlabel("x")
     ax_u_true.set_ylabel("t")
     fig.colorbar(c, ax=ax_u_true)
@@ -222,8 +227,8 @@ def plot_overview(control_dir: Path, sweep_dir: Path, out_png: Path) -> None:
     ax_u_pred.set_ylabel("t")
     fig.colorbar(c, ax=ax_u_pred)
 
-    c = ax_u_err.contourf(xx_u, tt_u, u_ref_err, levels=40, cmap="magma")
-    ax_u_err.set_title(r"(i) Reference vs. PINN Error")
+    c = ax_u_err.contourf(xx_u, tt_u, u_panel_err, levels=40, cmap="magma")
+    ax_u_err.set_title("(i) Rollout vs. PINN Error" if u_roll_saved is not None else r"(i) Reference vs. PINN Error")
     ax_u_err.set_xlabel("x")
     ax_u_err.set_ylabel("t")
     fig.colorbar(c, ax=ax_u_err)

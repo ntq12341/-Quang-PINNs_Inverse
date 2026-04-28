@@ -39,7 +39,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--L", type=float, default=1.0)
     parser.add_argument("--T", type=float, default=1.0)
     parser.add_argument("--nu", type=float, default=0.1)
-    parser.add_argument("--epochs", type=int, default=5000)
+    parser.add_argument("--epochs", type=int, default=20000)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--lr-drop-epochs", type=int, nargs="*", default=[10000])
     parser.add_argument("--lr-drop-factor", type=float, default=0.1)
