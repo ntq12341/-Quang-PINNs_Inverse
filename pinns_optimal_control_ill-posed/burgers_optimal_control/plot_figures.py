@@ -305,6 +305,53 @@ def plot_lcurve(control_dir: Path, out_png: Path) -> None:
     plt.close(fig)
 
 
+def plot_control_surfaces(control_dir: Path, out_png: Path) -> None:
+    field_f = _load_csv_2d(control_dir / "control_f.csv")
+    xx_f, tt_f, f_vals = _reshape_field(field_f, [2, 3, 4])
+    _, f_pred, _ = f_vals
+
+    no_reg_control_dir = control_dir.parent / "no_reg" / "sweep_wj" / "optimal_control_results"
+    has_no_reg = (no_reg_control_dir / "control_f.csv").exists()
+    if has_no_reg:
+        field_f_no_reg = _load_csv_2d(no_reg_control_dir / "control_f.csv")
+        xx_f_no_reg, tt_f_no_reg, f_vals_no_reg = _reshape_field(field_f_no_reg, [2, 3, 4])
+        _, f_pred_no_reg, _ = f_vals_no_reg
+
+    fig = plt.figure(figsize=(15, 6.2))
+    ax_reg = fig.add_subplot(1, 2, 1, projection="3d")
+    surf_reg = ax_reg.plot_surface(xx_f, tt_f, f_pred, cmap="viridis", linewidth=0, antialiased=True)
+    ax_reg.set_title("(a) Control Surface with Tikhonov")
+    ax_reg.set_xlabel("x")
+    ax_reg.set_ylabel("t")
+    ax_reg.set_zlabel("f(x,t)")
+    ax_reg.view_init(elev=28, azim=-130)
+    fig.colorbar(surf_reg, ax=ax_reg, shrink=0.7, pad=0.08)
+
+    ax_no_reg = fig.add_subplot(1, 2, 2, projection="3d")
+    if has_no_reg:
+        surf_no_reg = ax_no_reg.plot_surface(
+            xx_f_no_reg,
+            tt_f_no_reg,
+            f_pred_no_reg,
+            cmap="plasma",
+            linewidth=0,
+            antialiased=True,
+        )
+        fig.colorbar(surf_no_reg, ax=ax_no_reg, shrink=0.7, pad=0.08)
+    else:
+        ax_no_reg.text2D(0.18, 0.5, "Missing no_reg control_f.csv", transform=ax_no_reg.transAxes)
+    ax_no_reg.set_title("(b) Control Surface without Tikhonov")
+    ax_no_reg.set_xlabel("x")
+    ax_no_reg.set_ylabel("t")
+    ax_no_reg.set_zlabel("f(x,t)")
+    ax_no_reg.view_init(elev=28, azim=-130)
+
+    fig.tight_layout()
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, bbox_inches="tight")
+    plt.close(fig)
+
+
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Create figures for the Burgers optimal-control example.")
     parser.add_argument("--control-dir", default="pinns_optimal_control_ill-posed/outputs/burgers_optimal_control/optimal_control_results")
@@ -320,6 +367,7 @@ def main() -> None:
     control_dir = Path(args.control_dir)
     sweep_dir = Path(args.sweep_dir)
     plot_overview(control_dir, sweep_dir, outdir / "fig_burgers_optimal_overview.png")
+    plot_control_surfaces(control_dir, outdir / "fig_burgers_control_surfaces_3d.png")
     plot_lcurve(control_dir, outdir / "fig_burgers_alpha_lcurve.png")
     plot_wj_sweep(sweep_dir, outdir / "fig_burgers_wj_sweep.png")
     print(f"Using control results from: {control_dir}")
