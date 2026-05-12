@@ -268,6 +268,32 @@ def plot_wj_sweep(sweep_dir: Path, out_png: Path) -> None:
     plt.close(fig)
 
 
+def plot_wj_sweep_rollout_objective(sweep_dir: Path, out_png: Path) -> None:
+    summary_path = sweep_dir / "summary.csv"
+    if not summary_path.exists():
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.axis("off")
+        ax.text(0.1, 0.5, "Missing sweep_wj summary.csv", fontsize=12)
+        out_png.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_png, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    sweep = _load_csv_2d(summary_path)
+    fig, ax = plt.subplots(figsize=(6.2, 4.5))
+    best = int(np.argmin(sweep[:, 5]))
+    ax.semilogx(sweep[:, 0], sweep[:, 5], marker="o", label="rollout objective")
+    ax.scatter([sweep[best, 0]], [sweep[best, 5]], color="red", zorder=3, label="best")
+    ax.set_title("(b) Rollout Objective")
+    ax.set_xlabel(r"$w_J$")
+    ax.set_ylabel("Rollout objective")
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_lcurve(control_dir: Path, out_png: Path) -> None:
     path = control_dir / "alpha_lcurve.csv"
     if not path.exists():
@@ -350,6 +376,111 @@ def plot_control_surfaces(control_dir: Path, out_png: Path) -> None:
     plt.close(fig)
 
 
+def plot_compact_terminal_lcurve_wj_surfaces(control_dir: Path, sweep_dir: Path, out_png: Path) -> None:
+    rollout_best_dir = _best_rollout_control_dir(sweep_dir, control_dir)
+    term = _load_csv_2d(rollout_best_dir / "terminal_state.csv")
+    roll_term = _load_csv_2d(rollout_best_dir / "rollout_terminal_state.csv")
+
+    no_reg_control_dir = control_dir.parent / "no_reg" / "sweep_wj" / "optimal_control_results"
+    no_reg_sweep_dir = control_dir.parent / "no_reg" / "sweep_wj" / "sweep_wj_results"
+    no_reg_rollout_best_dir = _best_rollout_control_dir(no_reg_sweep_dir, no_reg_control_dir, objective_col=3)
+    no_reg_term = None
+    no_reg_roll_term = None
+    if (no_reg_rollout_best_dir / "terminal_state.csv").exists() and (no_reg_rollout_best_dir / "rollout_terminal_state.csv").exists():
+        no_reg_term = _load_csv_2d(no_reg_rollout_best_dir / "terminal_state.csv")
+        no_reg_roll_term = _load_csv_2d(no_reg_rollout_best_dir / "rollout_terminal_state.csv")
+
+    sweep_summary = _load_csv_2d(sweep_dir / "summary.csv") if (sweep_dir / "summary.csv").exists() else None
+    field_f = _load_csv_2d(control_dir / "control_f.csv")
+    xx_f, tt_f, f_vals = _reshape_field(field_f, [2, 3, 4])
+    _, f_pred, _ = f_vals
+
+    no_reg_field = no_reg_control_dir / "control_f.csv"
+    has_no_reg_surface = no_reg_field.exists()
+    if has_no_reg_surface:
+        field_f_no_reg = _load_csv_2d(no_reg_field)
+        xx_f_no_reg, tt_f_no_reg, f_vals_no_reg = _reshape_field(field_f_no_reg, [2, 3, 4])
+        _, f_pred_no_reg, _ = f_vals_no_reg
+
+    fig = plt.figure(figsize=(14, 15))
+    gs = fig.add_gridspec(3, 2, hspace=0.45, wspace=0.32)
+
+    ax_term = fig.add_subplot(gs[0, 0])
+    ax_term_no_reg = fig.add_subplot(gs[0, 1])
+    ax_lcurve = fig.add_subplot(gs[1, 0])
+    ax_wj = fig.add_subplot(gs[1, 1])
+    ax_surface_reg = fig.add_subplot(gs[2, 0], projection="3d")
+    ax_surface_no_reg = fig.add_subplot(gs[2, 1], projection="3d")
+
+    ax_term.plot(term[:, 0], term[:, 1], color="black", lw=2.2, label="target")
+    ax_term.plot(term[:, 0], term[:, 2], color="tab:orange", lw=1.8, ls="-.", label="PINN")
+    ax_term.plot(roll_term[:, 0], roll_term[:, 2], color="tab:blue", lw=2.0, ls="--", label="rollout")
+    ax_term.set_title("(a) Terminal State + Rollout")
+    ax_term.set_xlabel("x")
+    ax_term.legend(fontsize=8)
+
+    if no_reg_term is not None and no_reg_roll_term is not None:
+        ax_term_no_reg.plot(no_reg_term[:, 0], no_reg_term[:, 1], color="black", lw=2.2, label="target")
+        ax_term_no_reg.plot(no_reg_term[:, 0], no_reg_term[:, 2], color="tab:orange", lw=1.8, ls="-.", label="PINN")
+        ax_term_no_reg.plot(no_reg_roll_term[:, 0], no_reg_roll_term[:, 2], color="tab:blue", lw=2.0, ls="--", label="rollout")
+        ax_term_no_reg.legend(fontsize=8)
+    else:
+        ax_term_no_reg.text(0.08, 0.5, "Missing no_reg terminal outputs", fontsize=12)
+    ax_term_no_reg.set_title("(b) No-Reg Terminal State + Rollout")
+    ax_term_no_reg.set_xlabel("x")
+
+    lcurve_path = control_dir / "alpha_lcurve.csv"
+    if lcurve_path.exists():
+        table = _load_csv_2d(lcurve_path)
+        alpha = table[:, 0]
+        residual = table[:, 1]
+        regularization = table[:, 2]
+        summary = _load_csv_2d(control_dir / "summary.csv")
+        alpha_star = float(summary[0, 1]) if summary.shape[1] > 1 else alpha[np.argmin(residual)]
+        idx = int(np.argmin(np.abs(alpha - alpha_star)))
+        ax_lcurve.loglog(residual, regularization, "b.-", lw=1.4, label="L-curve")
+        ax_lcurve.loglog(residual[idx], regularization[idx], "ro", ms=8, label=rf"$\alpha^*={alpha_star:.2e}$")
+        ax_lcurve.legend(fontsize=8)
+    else:
+        ax_lcurve.text(0.12, 0.5, "Missing alpha_lcurve.csv", fontsize=12)
+    ax_lcurve.set_title("(c) L-curve")
+    ax_lcurve.set_xlabel("Residual norm")
+    ax_lcurve.set_ylabel("H1 norm")
+
+    if sweep_summary is not None and sweep_summary.shape[1] >= 6:
+        best = int(np.argmin(sweep_summary[:, 5]))
+        ax_wj.semilogx(sweep_summary[:, 0], sweep_summary[:, 5], marker="o", label="rollout objective")
+        ax_wj.scatter([sweep_summary[best, 0]], [sweep_summary[best, 5]], color="red", zorder=3, label="best")
+        ax_wj.legend(fontsize=8)
+    else:
+        ax_wj.text(0.10, 0.5, "Missing sweep_wj summary.csv", fontsize=12)
+    ax_wj.set_title(r"(d) Rollout Objective vs $w_J$")
+    ax_wj.set_xlabel(r"$w_J$")
+
+    surf_reg = ax_surface_reg.plot_surface(xx_f, tt_f, f_pred, cmap="viridis", linewidth=0, antialiased=True)
+    ax_surface_reg.set_title("(e) Control Surface with Tikhonov")
+    ax_surface_reg.set_xlabel("x")
+    ax_surface_reg.set_ylabel("t")
+    ax_surface_reg.set_zlabel("f(x,t)")
+    ax_surface_reg.view_init(elev=28, azim=-130)
+    fig.colorbar(surf_reg, ax=ax_surface_reg, shrink=0.65, pad=0.08)
+
+    if has_no_reg_surface:
+        surf_no_reg = ax_surface_no_reg.plot_surface(xx_f_no_reg, tt_f_no_reg, f_pred_no_reg, cmap="plasma", linewidth=0, antialiased=True)
+        fig.colorbar(surf_no_reg, ax=ax_surface_no_reg, shrink=0.65, pad=0.08)
+    else:
+        ax_surface_no_reg.text2D(0.18, 0.5, "Missing no_reg control_f.csv", transform=ax_surface_no_reg.transAxes)
+    ax_surface_no_reg.set_title("(f) Control Surface without Tikhonov")
+    ax_surface_no_reg.set_xlabel("x")
+    ax_surface_no_reg.set_ylabel("t")
+    ax_surface_no_reg.set_zlabel("f(x,t)")
+    ax_surface_no_reg.view_init(elev=28, azim=-130)
+
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, bbox_inches="tight")
+    plt.close(fig)
+
+
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Create figures for the heat optimal-control example.")
     parser.add_argument("--control-dir", default="pinns_optimal_control_ill-posed/outputs/heat_optimal_control/optimal_control_results")
@@ -369,6 +500,8 @@ def main() -> None:
     plot_control_surfaces(control_dir, outdir / "fig_heat_control_surfaces_3d.png")
     plot_lcurve(control_dir, outdir / "fig_heat_alpha_lcurve.png")
     plot_wj_sweep(sweep_dir, outdir / "fig_heat_wj_sweep.png")
+    plot_wj_sweep_rollout_objective(sweep_dir, outdir / "fig_heat_wj_sweep_b_rollout_objective.png")
+    plot_compact_terminal_lcurve_wj_surfaces(control_dir, sweep_dir, outdir / "fig_heat_selected_bcef_surfaces_3x2.png")
     print(f"Using control results from: {control_dir}")
     print(f"Saved figures in: {outdir}")
 
